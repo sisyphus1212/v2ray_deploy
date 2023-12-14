@@ -1,0 +1,2 @@
+运行sh ./proxy-mgmt_init.sh
+修改proxy_mgt.env中的主机信息
