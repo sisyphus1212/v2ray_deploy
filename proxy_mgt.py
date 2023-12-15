@@ -196,6 +196,17 @@ def allow_ip():
     data_base64 = base64.b64encode(data_bytes)
     return "vmess://" + str(data_base64.decode('utf-8'))
 
+@app.route('/other', methods=['GET'])
+def other():
+    cmd = '''bash << EOF
+        curl https://github.com/mksshare/mksshare.github.io  |grep "vmess.*=="
+EOF'''
+    try:
+        status, output = subprocess.getstatusoutput(cmd)
+    except:
+        logger.error("remote exec err cmd: %s ", cmd)
+    return output
+
 def scp_transfer(src_path,  dst_path, username, remote_host, remote_port, password):
     """
     Transfer a file or directory using scp with sshpass.
