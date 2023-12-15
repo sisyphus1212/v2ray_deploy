@@ -6,9 +6,3 @@ sudo systemctl daemon-reload
 sudo systemctl start proxy-mgmt_restart.timer
 sudo systemctl enable proxy-mgmt_restart.timer
 sudo systemctl start proxy-mgmt.service
-echo << EOF > /etc/proxy_mgt.env
-PROXY_USER=???
-PROXY_PASSWORD=xxxxx
-PROXY_HOST=1.1.2.2
-PROXY_PORT=22
-EOF
