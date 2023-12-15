@@ -264,7 +264,7 @@ def init_v2ray(password, user, host, port):
     if status:  # If the output is empty, v2ray service does not exist
         # Download and execute the installation script remotely
         print("install v2ray")
-        install_v2ray_cmd = "\"bash <(curl https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh)\""
+        install_v2ray_cmd = "curl https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh | bash"
         status, install_output = executor.execute(install_v2ray_cmd)
         if status:
             logger.error(f"Failed to download and execute the V2Ray installation script. Error: {install_output}")
