@@ -335,7 +335,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     executor = RemoteExecutor(args.password, args.user, args.host, args.port)  # 使用外部参数来初始化
-    init_v2ray(args.password, args.user, args.host, args.port)
+    if init_v2ray(args.password, args.user, args.host, args.port):
+        logger.error(f"init v2ray Error")
+        exit(1)
+
     if init_iptables():
         app.run(host="0.0.0.0", port=5000)
 
