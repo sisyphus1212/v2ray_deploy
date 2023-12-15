@@ -6,7 +6,7 @@ SSH_PORT=$3
 NEW_SSH_PORT=$4
 NEW_PASSWD=$5
 
-if [ "$#" -ne 2 ]; then
+if [ "$#" -ne 5 ]; then
     echo "Usage: $0 PRIVATE_KEY USER_NAME SERVER_ADDRESS SSH_PORT NEW_SSH_PORT NEW_PASSWD"
     exit 1
 fi
