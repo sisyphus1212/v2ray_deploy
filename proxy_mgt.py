@@ -270,17 +270,23 @@ def init_iptables():
     status = 0
     IPAddr = get_wan_ip()
     logger.info("init: Your Computer IP Address is: %s", IPAddr)
-    rules = [iptables_rules_dict["AllowIpTCP"] % IPAddr, iptables_rules_dict["AllowCFPORT"] % v2ray_port] + iptable_init_rules
+    append_rules = [iptables_rules_dict["AllowIpTCP"] % IPAddr] + iptable_init_rules
 
-    for rule in rules:
+    remote_cmd = []
+    for rule in append_rules:
         if not rule_exists(executor, rule):
-            #clean=iptables_action["clean"]
-            #TODO
-            remote_cmd = iptables_action["append"] + rule
-            status, output = executor.execute(remote_cmd)
-            if status:
-                logger.error("init: append local ip to remote iptables rules error")
-                logger.error("init: %s", remote_cmd)
+            remote_cmd.append(iptables_action["append"] + rule)
+
+    #clean_rule=iptables_action["clean"]
+    #TODO
+
+    # insert rule : permit v2ray_port
+    remote_cmd.append(iptables_rules_dict["AllowCFPORT"] % v2ray_port)
+    for cmd in remote_cmd:
+        status, output = executor.execute(cmd)
+        if status:
+            logger.error("init: append local ip to remote iptables rules error")
+            logger.error("init: %s", cmd)
     return True if not status else False
 
 def init_v2ray(password, user, host, port):
