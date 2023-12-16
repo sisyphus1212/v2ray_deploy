@@ -54,6 +54,7 @@ iptables_action = {
     "append" : "iptables -A ",
     "insert" : "iptables -I ",
     "del" : "iptables -D ",
+    "clean" : "iptables -F ",
     "is_exist": "iptables -C "
 }
 
@@ -273,6 +274,8 @@ def init_iptables():
 
     for rule in rules:
         if not rule_exists(executor, rule):
+            #clean=iptables_action["clean"]
+            #TODO
             remote_cmd = iptables_action["append"] + rule
             status, output = executor.execute(remote_cmd)
             if status:
