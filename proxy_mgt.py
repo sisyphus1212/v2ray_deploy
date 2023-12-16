@@ -68,6 +68,7 @@ iptable_init_rules = [
 
 v2ray_id = "a17a1af7-efa5-42ca-b7e9-aa35282d737f"
 v2ray_port = 33964 #random.randint(10000,40000)
+debug_port = 33963 #random.randint(10000,40000)
 alterId = 56
 access_Log = "/var/log/v2ray/access.log"
 error_Log = "/var/log/v2ray/error.log"
@@ -140,7 +141,7 @@ v2ray_client_json = {
   "v": "2",
   "ps": "",
   "add": "",
-  "port": "%s"%(v2ray_port),
+  "port": "443",
   "id": "%s"%(v2ray_id),
   "aid": "%s"%(alterId),
   "scy": "auto",
@@ -282,6 +283,7 @@ def init_iptables():
 
     # insert rule : permit v2ray_port
     remote_cmd.append(iptables_action["insert"] + iptables_rules_dict["AllowCFPORT"] % v2ray_port)
+    remote_cmd.append(iptables_action["insert"] + iptables_rules_dict["AllowCFPORT"] % debug_port)
     for cmd in remote_cmd:
         status, output = executor.execute(cmd)
         if status:
