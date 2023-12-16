@@ -230,7 +230,7 @@ def allow_ip():
     v2ray_client_json["port"] = cf_ws_port
     v2ray_client_json["host"] = cf_uri
     v2ray_client_json["sni"] = cf_uri
-    v2ray_client_direct_json = v2ray_client_json.deepcopy(v2ray_client_json)
+    v2ray_client_direct_json = copy.deepcopy(v2ray_client_json)
     v2ray_client_direct_json["add"] = str(executor.host)
     v2ray_client_direct_json["port"] = v2ray_port
     v2ray_client_direct_json["tls"] = ""
