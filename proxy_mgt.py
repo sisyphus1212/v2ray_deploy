@@ -132,7 +132,7 @@ v2ray_config_json = {
   ]
 }
 
-v2ray_config_json["inbounds"]["streamSettings"] = ws_streamSettings
+v2ray_config_json["inbounds"][0].update({"streamSettings": ws_streamSettings})
 
 v2ray_client_json = {
   "v": "2",
