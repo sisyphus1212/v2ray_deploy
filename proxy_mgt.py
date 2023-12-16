@@ -9,6 +9,7 @@ import base64
 import random
 import os
 import uuid
+import copy
 
 DIR = os.path.realpath(__file__)
 BDIR = os.path.dirname(DIR)
@@ -196,6 +197,21 @@ def rule_exists(executor, rule):
 
 app = Flask(__name__)
 
+def read_fast_ips():
+    import re
+    ip_addresses = []
+    try:
+        file_path = '/root/CloudflareST/result.csv'
+        with open(file_path, 'r') as file:
+            file_content = file.read()
+
+        # 使用正则表达式提取IP地址
+        ip_pattern = re.compile(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b')
+        ip_addresses = re.findall(ip_pattern, file_content)
+    except:
+        print("get fast ips error !!")
+    return ip_addresses
+
 @app.route('/allow-ip', methods=['GET'])
 def allow_ip():
     ret = ""
@@ -214,9 +230,43 @@ def allow_ip():
     v2ray_client_json["port"] = cf_ws_port
     v2ray_client_json["host"] = cf_uri
     v2ray_client_json["sni"] = cf_uri
+    v2ray_client_direct_json = v2ray_client_json.deepcopy(v2ray_client_json)
+    v2ray_client_direct_json["add"] = str(executor.host)
+    v2ray_client_direct_json["port"] = v2ray_port
+    v2ray_client_direct_json["tls"] = ""
     data_bytes = json.dumps(v2ray_client_json).encode('utf-8')  # 将字符串转换为字节
-    data_base64 = base64.b64encode(data_bytes)
-    return "vmess://" + str(data_base64.decode('utf-8'))
+    main_data_base64 = base64.b64encode(data_bytes)
+    data_bytes = json.dumps(v2ray_client_json).encode('utf-8')  # 将字符串转换为字节
+    main_direct_data_base64 = base64.b64encode(data_bytes)
+    return "vmess://" + str(main_data_base64.decode('utf-8')) + "\n" + "vmess://" + str(main_direct_data_base64.decode('utf-8'))
+
+@app.route('/fast_ip', methods=['GET'])
+def fast_ip():
+    fast_ips = read_fast_ips()
+    vmess_order_lists = []
+    if len(fast_ips):
+        for ip in fast_ips:
+            ret = "fast-ip"
+            v2ray_client_json["ps"] = ret
+            v2ray_client_json["add"] = ip
+            v2ray_client_json["port"] = cf_ws_port
+            v2ray_client_json["host"] = cf_uri
+            v2ray_client_json["sni"] = cf_uri
+            data_bytes = json.dumps(v2ray_client_json).encode('utf-8')  # 将字符串转换为字节
+            main_data_base64 = base64.b64encode(data_bytes)
+            vmess_order_lists.append("vmess://" + str(main_data_base64.decode('utf-8')))
+    return "\n".join(vmess_order_lists)
+
+@app.route('/other_github', methods=['GET'])
+def other_github():
+    cmd = '''bash << EOF
+        curl https://github.com/mksshare/mksshare.github.io  |grep "vmess.*=="
+EOF'''
+    try:
+        status, output = subprocess.getstatusoutput(cmd)
+    except:
+        logger.error("remote exec err cmd: %s ", cmd)
+    return output
 
 @app.route('/other', methods=['GET'])
 def other():
@@ -383,5 +433,4 @@ if __name__ == '__main__':
 
     if init_iptables():
         app.run(host="0.0.0.0", port=5000)
-
 
