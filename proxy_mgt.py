@@ -65,10 +65,38 @@ iptable_init_rules = [
 ]
 
 v2ray_id = "a17a1af7-efa5-42ca-b7e9-aa35282d737f"
-v2ray_port = random.randint(10000,40000)
+v2ray_port = 33964 #random.randint(10000,40000)
 alterId = 56
 access_Log = "/var/log/v2ray/access.log"
 error_Log = "/var/log/v2ray/error.log"
+
+tcp_streamSettings = {
+    "network": "tcp",
+    "tcpSettings": {
+        "header": {
+        "type": "http",
+        "response": {
+            "version": "1.1",
+            "status": "200",
+            "reason": "OK",
+            "headers": {
+            "Content-Type": ["application/octet-stream", "application/x-msdownload", "text/html", "application/x-shockwave-flash"],
+            "Transfer-Encoding": ["chunked"],
+            "Connection": ["keep-alive"],
+            "Pragma": "no-cache"
+            }
+        }
+        }
+    }
+}
+
+ws_streamSettings = {
+    "network": "ws",
+    "wsSettings": {
+        "path": "/qaz"
+    }
+}
+
 v2ray_config_json = {
   "log": {
     "loglevel": "warning",
@@ -95,23 +123,7 @@ v2ray_config_json = {
         }
       },
      "streamSettings": {
-        "network": "tcp",
-        "tcpSettings": {
-          "header": {
-            "type": "http",
-            "response": {
-              "version": "1.1",
-              "status": "200",
-              "reason": "OK",
-              "headers": {
-                "Content-Type": ["application/octet-stream", "application/x-msdownload", "text/html", "application/x-shockwave-flash"],
-                "Transfer-Encoding": ["chunked"],
-                "Connection": ["keep-alive"],
-                "Pragma": "no-cache"
-              }
-            }
-          }
-        }
+
       }
     }
   ],
@@ -123,6 +135,8 @@ v2ray_config_json = {
   ]
 }
 
+v2ray_config_json["inbounds"]["streamSettings"] = ws_streamSettings
+
 v2ray_client_json = {
   "v": "2",
   "ps": "",
@@ -131,7 +145,7 @@ v2ray_client_json = {
   "id": "%s"%(v2ray_id),
   "aid": "%s"%(alterId),
   "scy": "auto",
-  "net": "tcp",
+  "net": "ws",
   "type": "http",
   "host": "cloudflare.com",
   "path": "/",
