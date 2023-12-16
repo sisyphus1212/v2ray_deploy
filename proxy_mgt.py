@@ -8,6 +8,7 @@ import json
 import base64
 import random
 import os
+import uuid
 
 DIR = os.path.realpath(__file__)
 BDIR = os.path.dirname(DIR)
@@ -66,12 +67,12 @@ iptable_init_rules = [
     iptables_rules_dict["DropIcmpSyn"]
 ]
 
-v2ray_id = "a17a1af7-efa5-42ca-b7e9-aa35282d737f"
+v2ray_id = str(uuid.uuid4())
 v2ray_port = 33964 #random.randint(10000,40000)
 debug_port = 33963 #random.randint(10000,40000)
 cf_ws_port = 443
 cf_uri = "1111.sisyphus1212.life"
-alterId = 56
+alterId = random.randint(20,100)
 access_Log = "/var/log/v2ray/access.log"
 error_Log = "/var/log/v2ray/error.log"
 
