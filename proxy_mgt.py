@@ -69,6 +69,8 @@ iptable_init_rules = [
 v2ray_id = "a17a1af7-efa5-42ca-b7e9-aa35282d737f"
 v2ray_port = 33964 #random.randint(10000,40000)
 debug_port = 33963 #random.randint(10000,40000)
+cf_ws_port = 443
+cf_uri = "1111.sisyphus1212.life"
 alterId = 56
 access_Log = "/var/log/v2ray/access.log"
 error_Log = "/var/log/v2ray/error.log"
@@ -205,7 +207,10 @@ def allow_ip():
     if not ret:
         ret = f"{origin_ip} exists on {executor.host}"
     v2ray_client_json["ps"] = ret
-    v2ray_client_json["add"] = str(executor.host)
+    #v2ray_client_json["add"] = str(executor.host)
+    #v2ray_client_json["port"] = str(executor.host)
+    v2ray_client_json["add"] = cf_uri
+    v2ray_client_json["port"] = cf_ws_port
     data_bytes = json.dumps(v2ray_client_json).encode('utf-8')  # 将字符串转换为字节
     data_base64 = base64.b64encode(data_bytes)
     return "vmess://" + str(data_base64.decode('utf-8'))
