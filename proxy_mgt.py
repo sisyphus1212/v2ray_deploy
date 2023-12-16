@@ -201,7 +201,7 @@ def read_fast_ips():
     import re
     ip_addresses = []
     try:
-        file_path = '/root/CloudflareST/result.csv'
+        file_path = '/root/CloudflareST/results.csv'
         with open(file_path, 'r') as file:
             file_content = file.read()
 
@@ -255,6 +255,7 @@ def fast_ip():
             data_bytes = json.dumps(v2ray_client_json).encode('utf-8')  # 将字符串转换为字节
             main_data_base64 = base64.b64encode(data_bytes)
             vmess_order_lists.append("vmess://" + str(main_data_base64.decode('utf-8')))
+    print("\n".join(vmess_order_lists))
     return "\n".join(vmess_order_lists)
 
 @app.route('/other_github', methods=['GET'])
