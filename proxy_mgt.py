@@ -212,6 +212,8 @@ def allow_ip():
     #v2ray_client_json["port"] = str(executor.host)
     v2ray_client_json["add"] = cf_uri
     v2ray_client_json["port"] = cf_ws_port
+    v2ray_client_json["host"] = cf_uri
+    v2ray_client_json["sni"] = cf_uri
     data_bytes = json.dumps(v2ray_client_json).encode('utf-8')  # 将字符串转换为字节
     data_base64 = base64.b64encode(data_bytes)
     return "vmess://" + str(data_base64.decode('utf-8'))
