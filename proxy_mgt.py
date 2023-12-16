@@ -281,7 +281,7 @@ def init_iptables():
     #TODO
 
     # insert rule : permit v2ray_port
-    remote_cmd.append(iptables_rules_dict["AllowCFPORT"] % v2ray_port)
+    remote_cmd.append(iptables_action["insert"] + iptables_rules_dict["AllowCFPORT"] % v2ray_port)
     for cmd in remote_cmd:
         status, output = executor.execute(cmd)
         if status:
