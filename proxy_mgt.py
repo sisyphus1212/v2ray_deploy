@@ -8,6 +8,8 @@ import json
 import base64
 import random
 import os
+import uuid
+import copy
 
 DIR = os.path.realpath(__file__)
 BDIR = os.path.dirname(DIR)
@@ -46,13 +48,15 @@ iptables_rules_dict = {
     "DropIcmpSyn": "INPUT -p icmp -j DROP",
     "AllowDNSUDP": "INPUT -p udp --sport 53 -j ACCEPT",
     "AllowDNSTCP": "INPUT -p tcp --sport 53 -j ACCEPT",
-    "AllowLoopback": "INPUT -i lo -j ACCEPT"
+    "AllowLoopback": "INPUT -i lo -j ACCEPT",
+    "AllowCFPORT": "INPUT 1 -p tcp --dport %s -j ACCEPT"
 }
 
 iptables_action = {
     "append" : "iptables -A ",
     "insert" : "iptables -I ",
     "del" : "iptables -D ",
+    "clean" : "iptables -F ",
     "is_exist": "iptables -C "
 }
 
@@ -64,11 +68,42 @@ iptable_init_rules = [
     iptables_rules_dict["DropIcmpSyn"]
 ]
 
-v2ray_id = "a17a1af7-efa5-42ca-b7e9-aa35282d737f"
-v2ray_port = random.randint(10000,40000)
-alterId = 56
+v2ray_id = str(uuid.uuid4())
+v2ray_port = 33964 #random.randint(10000,40000)
+debug_port = 33963 #random.randint(10000,40000)
+cf_ws_port = 443
+cf_uri = "1111.sisyphus1212.life"
+alterId = random.randint(20,100)
 access_Log = "/var/log/v2ray/access.log"
 error_Log = "/var/log/v2ray/error.log"
+
+tcp_streamSettings = {
+    "network": "tcp",
+    "tcpSettings": {
+        "header": {
+        "type": "http",
+        "response": {
+            "version": "1.1",
+            "status": "200",
+            "reason": "OK",
+            "headers": {
+            "Content-Type": ["application/octet-stream", "application/x-msdownload", "text/html", "application/x-shockwave-flash"],
+            "Transfer-Encoding": ["chunked"],
+            "Connection": ["keep-alive"],
+            "Pragma": "no-cache"
+            }
+        }
+        }
+    }
+}
+
+ws_streamSettings = {
+    "network": "ws",
+    "wsSettings": {
+        "path": "/qaz"
+    }
+}
+
 v2ray_config_json = {
   "log": {
     "loglevel": "warning",
@@ -94,25 +129,6 @@ v2ray_config_json = {
           "to": "dynamicPort"
         }
       },
-     "streamSettings": {
-        "network": "tcp",
-        "tcpSettings": {
-          "header": {
-            "type": "http",
-            "response": {
-              "version": "1.1",
-              "status": "200",
-              "reason": "OK",
-              "headers": {
-                "Content-Type": ["application/octet-stream", "application/x-msdownload", "text/html", "application/x-shockwave-flash"],
-                "Transfer-Encoding": ["chunked"],
-                "Connection": ["keep-alive"],
-                "Pragma": "no-cache"
-              }
-            }
-          }
-        }
-      }
     }
   ],
   "outbounds": [
@@ -123,19 +139,21 @@ v2ray_config_json = {
   ]
 }
 
+v2ray_config_json["inbounds"][0].update({"streamSettings": ws_streamSettings})
+
 v2ray_client_json = {
   "v": "2",
   "ps": "",
   "add": "",
-  "port": "%s"%(v2ray_port),
+  "port": "443",
   "id": "%s"%(v2ray_id),
   "aid": "%s"%(alterId),
   "scy": "auto",
-  "net": "tcp",
+  "net": "ws",
   "type": "http",
   "host": "cloudflare.com",
-  "path": "/",
-  "tls": "",
+  "path": "/qaz",
+  "tls": "tls",
   "sni": "cloudflare.com",
   "alpn": "",
   "fp": ""
@@ -179,6 +197,21 @@ def rule_exists(executor, rule):
 
 app = Flask(__name__)
 
+def read_fast_ips():
+    import re
+    ip_addresses = []
+    try:
+        file_path = '/root/CloudflareST/result.csv'
+        with open(file_path, 'r') as file:
+            file_content = file.read()
+
+        # 使用正则表达式提取IP地址
+        ip_pattern = re.compile(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b')
+        ip_addresses = re.findall(ip_pattern, file_content)
+    except:
+        print("get fast ips error !!")
+    return ip_addresses
+
 @app.route('/allow-ip', methods=['GET'])
 def allow_ip():
     ret = ""
@@ -191,10 +224,49 @@ def allow_ip():
     if not ret:
         ret = f"{origin_ip} exists on {executor.host}"
     v2ray_client_json["ps"] = ret
-    v2ray_client_json["add"] = str(executor.host)
+    #v2ray_client_json["add"] = str(executor.host)
+    #v2ray_client_json["port"] = str(executor.host)
+    v2ray_client_json["add"] = cf_uri
+    v2ray_client_json["port"] = cf_ws_port
+    v2ray_client_json["host"] = cf_uri
+    v2ray_client_json["sni"] = cf_uri
+    v2ray_client_direct_json = v2ray_client_json.deepcopy(v2ray_client_json)
+    v2ray_client_direct_json["add"] = str(executor.host)
+    v2ray_client_direct_json["port"] = v2ray_port
+    v2ray_client_direct_json["tls"] = ""
     data_bytes = json.dumps(v2ray_client_json).encode('utf-8')  # 将字符串转换为字节
-    data_base64 = base64.b64encode(data_bytes)
-    return "vmess://" + str(data_base64.decode('utf-8'))
+    main_data_base64 = base64.b64encode(data_bytes)
+    data_bytes = json.dumps(v2ray_client_json).encode('utf-8')  # 将字符串转换为字节
+    main_direct_data_base64 = base64.b64encode(data_bytes)
+    return "vmess://" + str(main_data_base64.decode('utf-8')) + "\n" + "vmess://" + str(main_direct_data_base64.decode('utf-8'))
+
+@app.route('/fast_ip', methods=['GET'])
+def fast_ip():
+    fast_ips = read_fast_ips()
+    vmess_order_lists = []
+    if len(fast_ips):
+        for ip in fast_ips:
+            ret = "fast-ip"
+            v2ray_client_json["ps"] = ret
+            v2ray_client_json["add"] = ip
+            v2ray_client_json["port"] = cf_ws_port
+            v2ray_client_json["host"] = cf_uri
+            v2ray_client_json["sni"] = cf_uri
+            data_bytes = json.dumps(v2ray_client_json).encode('utf-8')  # 将字符串转换为字节
+            main_data_base64 = base64.b64encode(data_bytes)
+            vmess_order_lists.append("vmess://" + str(main_data_base64.decode('utf-8')))
+    return "\n".join(vmess_order_lists)
+
+@app.route('/other_github', methods=['GET'])
+def other_github():
+    cmd = '''bash << EOF
+        curl https://github.com/mksshare/mksshare.github.io  |grep "vmess.*=="
+EOF'''
+    try:
+        status, output = subprocess.getstatusoutput(cmd)
+    except:
+        logger.error("remote exec err cmd: %s ", cmd)
+    return output
 
 def scp_transfer(src_path,  dst_path, username, remote_host, remote_port, password):
     """
@@ -246,15 +318,24 @@ def init_iptables():
     status = 0
     IPAddr = get_wan_ip()
     logger.info("init: Your Computer IP Address is: %s", IPAddr)
-    rules = [iptables_rules_dict["AllowIpTCP"] % IPAddr] + iptable_init_rules
+    append_rules = [iptables_rules_dict["AllowIpTCP"] % IPAddr] + iptable_init_rules
 
-    for rule in rules:
+    remote_cmd = []
+    for rule in append_rules:
         if not rule_exists(executor, rule):
-            remote_cmd = iptables_action["append"] + rule
-            status, output = executor.execute(remote_cmd)
-            if status:
-                logger.error("init: append local ip to remote iptables rules error")
-                logger.error("init: %s", remote_cmd)
+            remote_cmd.append(iptables_action["append"] + rule)
+
+    #clean_rule=iptables_action["clean"]
+    #TODO
+
+    # insert rule : permit v2ray_port
+    remote_cmd.append(iptables_action["insert"] + iptables_rules_dict["AllowCFPORT"] % v2ray_port)
+    remote_cmd.append(iptables_action["insert"] + iptables_rules_dict["AllowCFPORT"] % debug_port)
+    for cmd in remote_cmd:
+        status, output = executor.execute(cmd)
+        if status:
+            logger.error("init: append local ip to remote iptables rules error")
+            logger.error("init: %s", cmd)
     return True if not status else False
 
 def init_v2ray(password, user, host, port):
@@ -264,7 +345,7 @@ def init_v2ray(password, user, host, port):
     if status:  # If the output is empty, v2ray service does not exist
         # Download and execute the installation script remotely
         print("install v2ray")
-        install_v2ray_cmd = "\"bash <(curl https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh)\""
+        install_v2ray_cmd = "curl https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh | bash"
         status, install_output = executor.execute(install_v2ray_cmd)
         if status:
             logger.error(f"Failed to download and execute the V2Ray installation script. Error: {install_output}")
@@ -335,8 +416,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     executor = RemoteExecutor(args.password, args.user, args.host, args.port)  # 使用外部参数来初始化
-    init_v2ray(args.password, args.user, args.host, args.port)
+    if init_v2ray(args.password, args.user, args.host, args.port):
+        logger.error(f"init v2ray Error")
+        exit(1)
+
     if init_iptables():
         app.run(host="0.0.0.0", port=5000)
-
 
