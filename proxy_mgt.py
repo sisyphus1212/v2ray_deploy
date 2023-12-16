@@ -145,7 +145,7 @@ v2ray_client_json = {
   "net": "ws",
   "type": "http",
   "host": "cloudflare.com",
-  "path": "/",
+  "path": "/qaz",
   "tls": "",
   "sni": "cloudflare.com",
   "alpn": "",
