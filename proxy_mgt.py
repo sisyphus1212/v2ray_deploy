@@ -122,9 +122,6 @@ v2ray_config_json = {
           "to": "dynamicPort"
         }
       },
-     "streamSettings": {
-
-      }
     }
   ],
   "outbounds": [
