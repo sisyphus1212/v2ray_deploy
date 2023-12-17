@@ -5,6 +5,7 @@ cp -f  ./proxy-mgmt.service /etc/systemd/system/proxy-mgmt.service
 SCRIPT=$(pwd)/get_fast_ip.sh
 chmod 0777 $SCRIPT
 (crontab -l 2>/dev/null; echo "0 */3 * * * $SCRIPT") | crontab -
+crontab -l | sort | uniq | crontab -
 sudo systemctl daemon-reload
 sudo systemctl start proxy-mgmt_restart.timer
 sudo systemctl enable proxy-mgmt_restart.timer
