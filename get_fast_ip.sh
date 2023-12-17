@@ -27,7 +27,7 @@ run_my_script() {
     chmod +x CloudflareST
 
     # 运行（不带参数）
-    ./CloudflareST -tl 350 -sl 5 -dn 20 -o ./output  -url https://gh.con.sh/https://github.com/AaronFeng753/Waifu2x-Extension-GUI/releases/download/v2.21.12/Waifu2x-Extension-GUI-v2.21.12-Portable.7z || return 1
+    ./CloudflareST -tl 350 -sl 8 -dn 20 -o ./output  -url https://gh.con.sh/https://github.com/AaronFeng753/Waifu2x-Extension-GUI/releases/download/v2.21.12/Waifu2x-Extension-GUI-v2.21.12-Portable.7z || return 1
     mv ./output results.csv
     return 0
 }
