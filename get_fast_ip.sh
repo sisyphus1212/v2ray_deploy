@@ -31,7 +31,7 @@ run_my_script() {
    # 中国：CGD,FUO,FUK,FOC,CAN,HAK,SJW,TNA,PKX,LHW,LYA,TAO,SHA,TSN,KHN,CGO,CGQ,ZGN,WHU,HYN,COK,XMN,DPS,CNN,SZX,KWE,WUX,HGH,CZX,KMG
     #NO_CHINA_AREA="AMD,ALA,BLR,BKK,BWN,BBI,CEB,IXC,MAA,CNX,CGP,CMB,DAC,FUK,HAN,SGN,HKG,HYD,ISB,CGK,JSR,JHB,KNU,KHH,KHI,KTM,KHV,CCU,KJA,KUL,LHE,MFM,MLE,MDL,MNL,BOM,NAG,OKA,DEL,KIX,PAT,PNH,ICN,SIN,URT,TPE,TAS,PBH,NRT,ULN,VTE,RGN,EVN,JOG,CGY,COK,DPS,CNN,AMS,ATH,BCN,BEG"
     ASIA="CGD,FUO,FUK,FOC,CAN,HAK,SJW,TNA,PKX,LHW,LYA,TAO,SHA,TSN,KHN,CGO,CGQ,ZGN,WHU,HYN,COK,XMN,DPS,CNN,SZX,KWE,WUX,HGH,CZX,KMG"
-    (timeout 600 ./CloudflareST -tl 300 -sl 5 -dn 10 -cfcolo ${ASIA}  -url  https://speedtest.sisyphus1212.life/)  || return 1
+    (timeout 600 ./CloudflareST -tl 300 -sl 5 -dn 10 -cfcolo ${ASIA}  -url  https://speedtest.sisyphus1212.life/ -o ./output)  || return 1
     mv ./output results.csv
     return 0
 }

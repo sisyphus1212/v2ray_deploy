@@ -197,11 +197,10 @@ def rule_exists(executor, rule):
 
 app = Flask(__name__)
 
-def read_fast_ips():
+def read_fast_ips(file_path='/root/CloudflareST/results.csv'):
     import re
     ip_addresses = []
     try:
-        file_path = '/root/CloudflareST/results.csv'
         with open(file_path, 'r') as file:
             file_content = file.read()
 
@@ -255,6 +254,36 @@ def fast_ip():
             data_bytes = json.dumps(v2ray_client_json).encode('utf-8')  # 将字符串转换为字节
             main_data_base64 = base64.b64encode(data_bytes)
             vmess_order_lists.append("vmess://" + str(main_data_base64.decode('utf-8')))
+    print("\n".join(vmess_order_lists))
+    return "\n".join(vmess_order_lists)
+
+@app.route('/local-fast-ip', methods=['GET'])
+def local_fast_ip():
+    fast_ips = read_fast_ips()
+    vmess_order_lists = []
+    cmd = '''bash << 'EOF'  2> /dev/null
+    curl http://117.50.175.8:5000/allow-ip | grep "vmess://" -m 1 |sed 's/vmess:\/\///' |base64 -d
+EOF'''
+    v2ray_client_json = ""
+    status, output = subprocess.getstatusoutput(cmd)
+    if status != 0:
+        print("get proxy err")
+        return 1
+    else:
+        v2ray_client_json = json.loads(output)
+
+    if len(fast_ips):
+        for ip in fast_ips:
+            ret = "local-fast-ip"
+            v2ray_client_json["ps"] = ret
+            v2ray_client_json["add"] = ip
+            v2ray_client_json["port"] = cf_ws_port
+            v2ray_client_json["host"] = cf_uri
+            v2ray_client_json["sni"] = cf_uri
+            data_bytes = json.dumps(v2ray_client_json).encode('utf-8')  # 将字符串转换为字节
+            main_data_base64 = base64.b64encode(data_bytes)
+            vmess_order_lists.append("vmess://" + str(main_data_base64.decode('utf-8')))
+
     print("\n".join(vmess_order_lists))
     return "\n".join(vmess_order_lists)
 
@@ -420,12 +449,20 @@ import argparse
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="RemoteExecutor Initialization Parameters")
+    parser.add_argument('--local', required=False, help='local for the v2ray')
+    args = parser.parse_args()
+    if args.local == "True":
+        app.run(host="0.0.0.0", port=5000)
+
     parser.add_argument('--password', required=True, help='Password for the RemoteExecutor')
     parser.add_argument('--user', required=True, help='Username for the RemoteExecutor')
     parser.add_argument('--host', required=True, help='Host for the RemoteExecutor')
     parser.add_argument('--port', required=True, help='port for the RemoteExecutor')
 
+
     args = parser.parse_args()
+    if args.local == "True":
+        app.run(host="0.0.0.0", port=5000)
 
     executor = RemoteExecutor(args.password, args.user, args.host, args.port)  # 使用外部参数来初始化
     if init_v2ray(args.password, args.user, args.host, args.port):
