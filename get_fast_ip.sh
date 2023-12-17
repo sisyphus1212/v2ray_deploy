@@ -27,7 +27,10 @@ run_my_script() {
     chmod +x CloudflareST
 
     # 运行（不带参数）
-    ./CloudflareST -tl 350 -sl 8 -dn 20 -o ./output  -url https://gh.con.sh/https://github.com/AaronFeng753/Waifu2x-Extension-GUI/releases/download/v2.21.12/Waifu2x-Extension-GUI-v2.21.12-Portable.7z || return 1
+    # 地区：CGD,MAA,CNX,CGP,CMB,DAC,FUO,FUK,FOC,CAN,HAK,HAN,SJW,SGN,HKG,HYD,ISB,CGK,JSR,TNA,JHB,KNU,KHH,KHI,KTM,KHV,CCU,KJA,KUL,LHE,PKX,LHW,LYA,MFM,MLE,MDL,MNL,BOM,NAG,OKA,DEL,KIX,PAT,PNH,TAO,ICN,SHA,SIN,URT,TPE,TAS,PBH,TSN,NRT,ULN,VTE,KHN,RGN,EVN,JOG,CGO,CGQ,ZGN,CGY,WHU,HYN,COK,XMN,DPS,CNN,SZX,KWE,WUX,HGH,CZX,KMG,AMS,ATH,BCN,BEG,TXL,BTS,BRU,OTP,BUD,KIV,CPH,ORK,DUB,DUS,EDI,FRA,GVA,GOT,HAM,HEL,IST
+    # 中国：CGD,FUO,FUK,FOC,CAN,HAK,SJW,TNA,PKX,LHW,LYA,TAO,SHA,TSN,KHN,CGO,CGQ,ZGN,WHU,HYN,COK,XMN,DPS,CNN,SZX,KWE,WUX,HGH,CZX,KMG
+    CHINA_AREA="CGD,FUO,FUK,FOC,CAN,HAK,SJW,TNA,PKX,LHW,LYA,TAO,SHA,TSN,KHN,CGO,CGQ,ZGN,WHU,HYN,COK,XMN,DPS,CNN,SZX,KWE,WUX,HGH,CZX,KMG,"
+    ./CloudflareST -tl 350 -sl 8 -dn 20 -o ./output  -url https://gh.con.sh/https://github.com/AaronFeng753/Waifu2x-Extension-GUI/releases/download/v2.21.12/Waifu2x-Extension-GUI-v2.21.12-Portable.7z -cfcolo ${CHINA_AREA}|| return 1
     mv ./output results.csv
     return 0
 }
