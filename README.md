@@ -11,10 +11,20 @@
 订阅链接为http://7.7.7.7:5000//allow-ip
 
 # 流量查询
+
 TODO
 
 # IP 切换
+
 TODO
 
 # 区域切换
+
 TODO
+
+# 客户端测速地址修改
+
+
+```
+guiConfigs/guiNConfig.json
+```
