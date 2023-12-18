@@ -1,0 +1,18 @@
+[Unit]
+Description=Proxy Management Service
+After=network.target
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+OnFailure=notify-admin@%n.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/proxy_mgt.env
+ExecStart=/usr/bin/python3 /path/to/proxy_mgt.py --password NONE --user NONE --host NONE --port NONE
+Restart=always
+RestartSec=5s
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
