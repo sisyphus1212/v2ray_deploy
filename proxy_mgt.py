@@ -182,6 +182,23 @@ EOF'''%(command)
             logger.error("ssh exec info: %s", output)
         return status, output
 
+    def execute_ab(self, command):
+        exec_cmd = '''bash << 'EOF'
+%s
+EOF'''%(command)
+        cmd = " ".join(["timeout 120 sshpass", "-p", self.password, "ssh -o StrictHostKeyChecking=no -p %s -t"%(self.port), f"{self.user}@{self.host}", exec_cmd])
+        status, output = 1, 0
+        try:
+            status, output = subprocess.getstatusoutput(cmd)
+        except:
+            logger.error("remote exec err cmd: %s ", cmd)
+
+        if status:
+            logger.error("ssh exec: %s", str(cmd))
+            logger.error("ssh ret code: %s", str(status))
+            logger.error("ssh exec info: %s", output)
+        return status, output
+
 executor = RemoteExecutor("lcj@12345", "root", "18.183.94.3")
 
 def rule_exists(executor, rule):
@@ -235,6 +252,24 @@ def allow_ip():
     data_bytes = json.dumps(v2ray_client_direct_json).encode('utf-8')  # 将字符串转换为字节
     main_direct_data_base64 = base64.b64encode(data_bytes)
     return "vmess://" + str(main_data_base64.decode('utf-8')) + "\n" + "vmess://" + str(main_direct_data_base64.decode('utf-8'))
+
+@app.route('/statics', methods=['GET'])
+def statics():
+    remote_cmd='''
+cat /proc/net/dev | grep -v "lo:" | grep -Ev "Inter|face" | awk '{
+    interface=$1;
+    rx_bytes=$2;
+    tx_bytes=$10;
+    rx_gbits = rx_bytes * 8 / (8*1024*1024*1024) ;
+    tx_gbits = tx_bytes * 8 / (8*1024*1024*1024) ;
+    printf "%s RX: %.2f Gbits TX: %.2f Gbits\\n", interface, rx_gbits, tx_gbits;
+}'
+'''
+    status, output=executor.execute_ab(remote_cmd);
+    v2ray_client_json["ps"] = output
+    data_bytes = json.dumps(v2ray_client_json).encode('utf-8')  # 将字符串转换为字节
+    main_data_base64 = base64.b64encode(data_bytes)
+    return "vmess://" + str(main_data_base64.decode('utf-8'))
 
 @app.route('/fast_ip', methods=['GET'])
 def fast_ip():

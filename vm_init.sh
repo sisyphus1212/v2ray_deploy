@@ -11,21 +11,27 @@ if [ "$#" -ne 5 ]; then
     exit 1
 fi
 
-ssh -i  ${PRIVATE_KEY} -t ${USER_NAME}@${SERVER_ADDRESS} sudo bash << EOF
+ssh -i  ${PRIVATE_KEY} -t ${PROXY_HOST_SSH_USER}@${PROXY_HOST_ADD} sudo bash << EOF
 sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
 sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
 sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
 apt install whois -y
-mkpasswd -m sha-512 ${NEW_PASSWD} | xargs -I {} usermod -p {} root  || { echo "mkpasswd failed"; exit 1; }
-sed -i 's/#Port 22/Port ${NEW_SSH_PORT}/' /etc/ssh/sshd_config
+mkpasswd -m sha-512 ${PROXY_HOST_SSH_PASSWORD} | xargs -I {} usermod -p {} root  || { echo "mkpasswd failed"; exit 1; }
+sed -i 's/#Port 22/Port ${PROXY_HOST_SSH_PORT}/' /etc/ssh/sshd_config
 systemctl restart sshd
 EOF
 
 echo << EOF > /etc/proxy_mgt.env
-PROXY_USER="root"
-PROXY_PASSWORD=${NEW_PASSWD}
-PROXY_HOST=${SERVER_ADDRESS}
-PROXY_PORT=${NEW_SSH_PORT}
+PROXY_HOST_SSH_USER=${PROXY_HOST_SSH_USER}
+PROXY_HOST_ADD=${PROXY_HOST_ADD}
+PROXY_HOST_SSH_PASSWORD=${PROXY_HOST_SSH_PASSWORD}
+PROXY_HOST_SSH_PORT=${PROXY_HOST_SSH_PORT}
+#v2ray and cf config
+PROXY_V2_UUID=${PROXY_V2_UUID}
+PROXY_V2_ALTERID=${PROXY_V2_ALTERID}
+PROXY_V2_PORT=${PROXY_V2_PORT}
+PROXY_V2_CF_URI=${PROXY_V2_CF_URI}
+PROXY_V2_CF_PORT=${PROXY_V2_CF_PORT}
 EOF
 
 bash ./proxy-mgmt_init.sh

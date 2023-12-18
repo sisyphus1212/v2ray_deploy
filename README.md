@@ -11,7 +11,7 @@ sh ./proxy-mgmt_init.sh
 # 本地加速(wsl)
 bash ./l_get_fast_ip_0.sh #公司网速限制的用这个
 bash ./l_get_fast_ip_2.sh #公司网速限制大于5M的用这个
-bash ./local_start_get.sh #没有网速限制的用这个
+bash ./l_get_fast_ip_no_limit.sh #没有网速限制的用这个
 
 # 容器运行
 TODO
@@ -19,10 +19,12 @@ TODO
 # 订阅方式
 ### 云服务器订阅
 假设运行proxy-mgmt_init.sh这个脚本的主机公网ip为:7.7.7.7
+
 订阅链接为http://7.7.7.7:5000/allow-ip
 
 ### 本地加速订阅
 订阅链接为http://127.0.0.1:5000/local-fast-ip
+
 订阅链接为http://本机ip:5000/local-fast-ip
 
 
