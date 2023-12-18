@@ -269,6 +269,7 @@ cat /proc/net/dev | grep -v "lo:" | grep -Ev "Inter|face" | awk '{
     v2ray_client_json["ps"] = output
     data_bytes = json.dumps(v2ray_client_json).encode('utf-8')  # 将字符串转换为字节
     main_data_base64 = base64.b64encode(data_bytes)
+    print(main_data_base64)
     return "vmess://" + str(main_data_base64.decode('utf-8'))
 
 @app.route('/fast_ip', methods=['GET'])
