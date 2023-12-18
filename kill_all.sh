@@ -16,3 +16,5 @@ filter_and_kill_processes() {
 }
 
 filter_and_kill_processes
+
+(crontab -l 2>/dev/null |grep -v "get_fast_ip.sh") | crontab -
