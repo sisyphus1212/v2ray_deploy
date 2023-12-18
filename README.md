@@ -8,7 +8,7 @@ pip install flask
 cp proxy_mgt.env /etc/proxy_mgt.env
 sh ./proxy-mgmt_init.sh
 
-# 本地加速
+# 本地加速(wsl)
 bash ./l_get_fast_ip_0.sh #公司网速限制的用这个
 bash ./l_get_fast_ip_2.sh #公司网速限制大于5M的用这个
 bash ./local_start_get.sh #没有网速限制的用这个
