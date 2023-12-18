@@ -8,4 +8,4 @@ SCRIPT=$(pwd)/get_fast_ip.sh
 [ $2 ] && timeout=$2 || timeout=300
 bash  $SCRIPT --speed ${speed} --timeout ${timeout}
 (crontab -l 2>/dev/null; echo "0 */1 * * * $SCRIPT") | crontab -
-python3 ./proxy_mgt.py --local True
+(set -a; . ./proxy_mgt.env; set +a; env python3 ./proxy_mgt.py --local True)

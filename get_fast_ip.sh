@@ -66,7 +66,7 @@ run_my_script() {
     #NO_CHINA_AREA="AMD,ALA,BLR,BKK,BWN,BBI,CEB,IXC,MAA,CNX,CGP,CMB,DAC,FUK,HAN,SGN,HKG,HYD,ISB,CGK,JSR,JHB,KNU,KHH,KHI,KTM,KHV,CCU,KJA,KUL,LHE,MFM,MLE,MDL,MNL,BOM,NAG,OKA,DEL,KIX,PAT,PNH,ICN,SIN,URT,TPE,TAS,PBH,NRT,ULN,VTE,RGN,EVN,JOG,CGY,COK,DPS,CNN,AMS,ATH,BCN,BEG"
     ASIA="CGD,FUO,FUK,FOC,CAN,HAK,SJW,TNA,PKX,LHW,LYA,TAO,SHA,TSN,KHN,CGO,CGQ,ZGN,WHU,HYN,COK,XMN,DPS,CNN,SZX,KWE,WUX,HGH,CZX,KMG"
     CFCOLO="" #"-cfcolo ${ASIA}"
-    (https_proxy= http_proxy= timeout 500 ./CloudflareST -tl ${TIME_LIMIT} -sl ${SPEEDTEST_LIMIT} -dn 20  $CFCOLO -url  ${SPEEDTEST_URL} -o ./output)  || return 1
+    (https_proxy= http_proxy= timeout 600 ./CloudflareST -tl ${TIME_LIMIT} -sl ${SPEEDTEST_LIMIT} -dn 13  $CFCOLO -url  ${SPEEDTEST_URL} -o ./output)  || return 1
     mv ./output results.csv
     return 0
 }
@@ -83,7 +83,9 @@ while [ $count -lt 6 ]; do
         echo "脚本执行失败，尝试重新执行"
         ((count++))
         if [ $count -gt 3 ]; then
-            SPEEDTEST_LIMIT=1
+            if [ $SPEEDTEST_LIMIT -gt 1 ]; then
+                SPEEDTEST_LIMIT=1
+            fi
             SPEEDTEST_URL="https://gh.con.sh/https://github.com/AaronFeng753/Waifu2x-Extension-GUI/releases/download/v2.21.12/Waifu2x-Extension-GUI-v2.21.12-Portable.7z"
         fi
     fi

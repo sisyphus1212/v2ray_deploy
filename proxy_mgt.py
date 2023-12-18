@@ -263,10 +263,10 @@ def local_fast_ip():
 EOF'''
     v2ray_client_json = ""
     status, output = subprocess.getstatusoutput(cmd)
-    if status != 0:
+    if status != 0 or len(output) == 0:
         print("get proxy err")
         return 1
-    else:
+    else :
         v2ray_client_json = json.loads(output)
 
     if len(fast_ips):
@@ -274,9 +274,9 @@ EOF'''
             ret = "local-fast-ip"
             v2ray_client_json["ps"] = ret
             v2ray_client_json["add"] = ip
-            v2ray_client_json["port"] = cf_ws_port
-            v2ray_client_json["host"] = cf_uri
-            v2ray_client_json["sni"] = cf_uri
+            #v2ray_client_json["port"] = cf_ws_port
+            #v2ray_client_json["host"] = cf_uri
+            #v2ray_client_json["sni"] = cf_uri
             data_bytes = json.dumps(v2ray_client_json).encode('utf-8')  # 将字符串转换为字节
             main_data_base64 = base64.b64encode(data_bytes)
             vmess_order_lists.append("vmess://" + str(main_data_base64.decode('utf-8')))
