@@ -1,7 +1,7 @@
 [Unit]
 Description=Timer to filter high speed ip for local optimization
 [Timer]
-OnCalendar=*:0/100
+OnCalendar=*:0/300
 Persistent=true
 
 [Install]
