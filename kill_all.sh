@@ -13,7 +13,7 @@ filter_and_kill_processes() {
       echo "No processes found with keyword: $keyword"
     fi
   done
-  (crontab -l 2>/dev/null |grep -v "get_fast_ip.sh") | crontab -
+  (crontab -l 2>/dev/null |grep -v "cloudflare_fast_ip") | crontab -
 }
 
 filter_and_kill_processes
