@@ -5,12 +5,16 @@ pip install flask
 
 # 云服务器部署方式
 修改proxy_mgt.env中的主机信息和代理信息
+
 cp proxy_mgt.env /etc/proxy_mgt.env
+
 sh ./proxy-mgmt_init.sh
 
 # 本地加速(wsl)
 bash ./l_get_fast_ip_0.sh #公司网速限制的用这个
+
 bash ./l_get_fast_ip_2.sh #公司网速限制大于5M的用这个
+
 bash ./l_get_fast_ip_no_limit.sh #没有网速限制的用这个
 
 # 容器运行
