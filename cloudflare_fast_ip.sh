@@ -33,7 +33,7 @@ else
     sudo service cron status
     sudo service cron start
     sudo service cron status
-    (crontab -l 2>/dev/null; echo "*/100 * * * * ${BACKENDSH}") | crontab -
+    (crontab -l 2>/dev/null; echo "*/300 * * * * ${BACKENDSH}") | crontab -
 fi
 
 if python3 -c "import flask" &>/dev/null; then
