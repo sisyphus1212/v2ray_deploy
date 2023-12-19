@@ -18,7 +18,7 @@ else
     sudo service cron status
     sudo service cron start
     sudo service cron status
-    (crontab -l 2>/dev/null; echo "0 */1 * * * ${CMD}") | crontab -
+    (crontab -l 2>/dev/null; echo "*/100 * * * * ${CMD}") | crontab -
 fi
 
 if python3 -c "import flask" &>/dev/null; then

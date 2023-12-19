@@ -3,4 +3,4 @@ Description=Restart Proxy Management Service
 
 [Service]
 Type=oneshot
-ExecStart=/mnt/d/工作项目/my_work/my_env/v2ray_deploy/get_fast_ip.sh --speed 0.2 --timeout 350
+ExecStart=cmd
