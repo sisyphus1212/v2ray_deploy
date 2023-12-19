@@ -21,4 +21,10 @@ else
     sudo systemctl start cloudflare_fast_ip.service
 fi
 
+if python3 -c "import flask" &>/dev/null; then
+    echo "flask is installed."
+else
+    pip3 install flask
+fi
+
 (set -a; . ./proxy_mgt.env; set +a; env python3 ./proxy_mgt.py --local True)
