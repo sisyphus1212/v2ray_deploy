@@ -3,10 +3,22 @@ SCRIPT=$(pwd)/get_fast_ip.sh
 [ $1 ] && speed=$1 || speed=5
 [ $2 ] && timeout=$2 || timeout=300
 CMD="$SCRIPT --speed ${speed} --timeout ${timeout}"
+
 bash ${CMD}
 
+BACKENDSH=/run/v2ray_deploy/cloudflare_fast_ip_backend.sh
+mkdir -p `dirname $BACKENDSH`
+chmod
+cat << EOF > ${BACKENDSH}
+#!/bin/bash
+set -a
+`env`
+set +a
+bash ${CMD}
+EOF
+
 if [ -n "$(pidof systemd)" ]; then
-    sed  -i "s|ExecStart=cmd|ExecStart=${CMD}|g" ./cloudflare_fast_ip.service
+    sed  -i "s|ExecStart=cmd|ExecStart=${BACKENDSH}|g" ./cloudflare_fast_ip.service
     cp -f ./cloudflare_fast_ip.service /etc/systemd/system/cloudflare_fast_ip.service
     cp ./cloudflare_fast_ip.timer /etc/systemd/system/cloudflare_fast_ip.timer
     sudo systemctl daemon-reload
@@ -18,7 +30,7 @@ else
     sudo service cron status
     sudo service cron start
     sudo service cron status
-    (crontab -l 2>/dev/null; echo "*/100 * * * * ${CMD}") | crontab -
+    (crontab -l 2>/dev/null; echo "*/100 * * * * ${BACKENDSH}") | crontab -
 fi
 
 if python3 -c "import flask" &>/dev/null; then
