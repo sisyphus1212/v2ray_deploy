@@ -4,15 +4,18 @@ SCRIPT=$(pwd)/get_fast_ip.sh
 [ $2 ] && timeout=$2 || timeout=300
 CMD="$SCRIPT --speed ${speed} --timeout ${timeout}"
 
-bash ${CMD}
+#bash ${CMD}
 
 BACKENDSH=/run/v2ray_deploy/cloudflare_fast_ip_backend.sh
+chmod  0777 ${BACKENDSH}
 mkdir -p `dirname $BACKENDSH`
 chmod
 cat << EOF > ${BACKENDSH}
 #!/bin/bash
 set -a
-`env`
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+http_proxy=$http_proxy
+https_proxy=$https_proxy
 set +a
 bash ${CMD}
 EOF
