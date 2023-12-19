@@ -1,0 +1,8 @@
+[Unit]
+Description=Timer to filter high speed ip for local optimization
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

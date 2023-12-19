@@ -1,7 +1,7 @@
 #!/bin/bash
 
 filter_and_kill_processes() {
-  local keywords=("get_fast_ip.sh" "CloudflareST" "proxy_mgt.py" "local_start_get")
+  local keywords=("get_fast_ip.sh" "CloudflareST" "proxy_mgt.py" "cloudflare_fast_ip")
 
   for keyword in "${keywords[@]}"; do
     pids=$(pgrep -f "$keyword")

@@ -1,0 +1,6 @@
+[Unit]
+Description=Restart Proxy Management Service
+
+[Service]
+Type=oneshot
+ExecStart=cmd

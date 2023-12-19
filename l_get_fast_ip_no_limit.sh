@@ -11,4 +11,4 @@ fi
 
 . ./kill_all.sh
 touch $LOG
-nohup bash local_start_get.sh 7 300 >> $LOG 2>&1 &
+nohup bash cloudflare_fast_ip.sh 7 300 >> $LOG 2>&1 &

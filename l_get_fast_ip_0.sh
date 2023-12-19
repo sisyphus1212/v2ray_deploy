@@ -12,4 +12,4 @@ if [ -e "$LOG" ]; then
 fi
 
 . ./kill_all.sh
-nohup bash local_start_get.sh 0.2 350 >> $LOG 2>&1 &
+nohup bash cloudflare_fast_ip.sh 0.2 350 >> $LOG 2>&1 &
