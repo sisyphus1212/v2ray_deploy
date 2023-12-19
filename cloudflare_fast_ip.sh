@@ -6,11 +6,6 @@ CMD="$SCRIPT --speed ${speed} --timeout ${timeout}"
 bash ${CMD}
 
 if [ -n "$(pidof systemd)" ]; then
-    sudo service cron status
-    sudo service cron start
-    sudo service cron status
-    (crontab -l 2>/dev/null; echo "0 */1 * * * ${CMD}") | crontab -
-else
     sed  -i "s|ExecStart=cmd|ExecStart=${CMD}|g" ./cloudflare_fast_ip.service
     cp -f ./cloudflare_fast_ip.service /etc/systemd/system/cloudflare_fast_ip.service
     cp ./cloudflare_fast_ip.timer /etc/systemd/system/cloudflare_fast_ip.timer
@@ -19,6 +14,11 @@ else
     sudo systemctl enable cloudflare_fast_ip.timer
     sudo systemctl stop cloudflare_fast_ip.service
     sudo systemctl start cloudflare_fast_ip.service
+else
+    sudo service cron status
+    sudo service cron start
+    sudo service cron status
+    (crontab -l 2>/dev/null; echo "0 */1 * * * ${CMD}") | crontab -
 fi
 
 if python3 -c "import flask" &>/dev/null; then
