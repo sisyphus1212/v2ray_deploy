@@ -11,7 +11,7 @@ import random
 import os
 import uuid
 import copy
-import datetime
+from datetime import datetime
 
 DIR = os.path.realpath(__file__)
 BDIR = os.path.dirname(DIR)
