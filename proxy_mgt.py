@@ -306,7 +306,7 @@ def fast_ip():
     vmess_order_lists = []
     if len(fast_ips):
         for ip in fast_ips:
-            ret = "%s-fast-ip"%(filetime)
+            ret = "%s-fast-ip"%(filetime[0])
             v2ray_client_json["ps"] = ret
             v2ray_client_json["add"] = ip
             v2ray_client_json["port"] = cf_ws_port
