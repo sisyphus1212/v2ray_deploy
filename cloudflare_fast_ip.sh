@@ -4,8 +4,6 @@ SCRIPT=$(pwd)/get_fast_ip.sh
 [ $2 ] && timeout=$2 || timeout=300
 CMD="$SCRIPT --speed ${speed} --timeout ${timeout}"
 
-bash ${CMD}
-
 BACKENDSH=/run/v2ray_deploy/cloudflare_fast_ip_backend.sh
 chmod  0777 ${BACKENDSH}
 mkdir -p `dirname $BACKENDSH`
@@ -33,6 +31,7 @@ else
     sudo service cron status
     sudo service cron start
     sudo service cron status
+    bash ${CMD}
     (crontab -l 2>/dev/null; echo "*/300 * * * * ${BACKENDSH}") | crontab -
 fi
 
