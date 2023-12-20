@@ -11,6 +11,7 @@ import random
 import os
 import uuid
 import copy
+import datetime
 
 DIR = os.path.realpath(__file__)
 BDIR = os.path.dirname(DIR)
@@ -226,6 +227,31 @@ def read_fast_ips(file_path='/root/CloudflareST/results.csv'):
         print("get fast ips error !!")
     return ip_addresses
 
+def get_file_time(file_path='/root/CloudflareST/results.csv'):
+    try:
+        # 检查文件是否存在
+        if not os.path.exists(file_path):
+            return ["%s文件不存在"%(file_path)]
+
+        # 获取文件的最后修改时间
+        mod_time = os.path.getmtime(file_path)
+        # 获取文件的创建时间
+        create_time = os.path.getctime(file_path)
+        # 获取文件的最后访问时间
+        access_time = os.path.getatime(file_path)
+
+        # 格式化时间戳
+        mod_time_readable = datetime.fromtimestamp(mod_time).strftime('%Y-%m-%d %H:%M:%S')
+        create_time_readable = datetime.fromtimestamp(create_time).strftime('%Y-%m-%d %H:%M:%S')
+        access_time_readable = datetime.fromtimestamp(access_time).strftime('%Y-%m-%d %H:%M:%S')
+
+        return [create_time_readable, mod_time_readable, access_time_readable]
+
+    except Exception as e:
+        # 返回异常信息
+        return [f"出现错误: {e}"]
+
+
 @app.route('/allow-ip', methods=['GET'])
 def allow_ip():
     ret = ""
@@ -276,10 +302,11 @@ cat /proc/net/dev | grep -v "lo:" | grep -Ev "Inter|face" | awk '{
 @app.route('/fast_ip', methods=['GET'])
 def fast_ip():
     fast_ips = read_fast_ips()
+    filetime = get_file_time()
     vmess_order_lists = []
     if len(fast_ips):
         for ip in fast_ips:
-            ret = "fast-ip"
+            ret = "%s-fast-ip"%(filetime)
             v2ray_client_json["ps"] = ret
             v2ray_client_json["add"] = ip
             v2ray_client_json["port"] = cf_ws_port
@@ -294,6 +321,7 @@ def fast_ip():
 @app.route('/local-fast-ip', methods=['GET'])
 def local_fast_ip():
     fast_ips = read_fast_ips()
+    filetime = get_file_time()
     vmess_order_lists = []
     cmd = '''bash << 'EOF'  2> /dev/null
     curl http://117.50.175.8:5000/allow-ip | grep "vmess://" -m 1 |sed 's/vmess:\/\///' |base64 -d
@@ -308,7 +336,7 @@ EOF'''
 
     if len(fast_ips):
         for ip in fast_ips:
-            ret = "local-fast-ip"
+            ret = "%s-local-fast-ip"%(filetime)
             v2ray_client_json["ps"] = ret
             v2ray_client_json["add"] = ip
             #v2ray_client_json["port"] = cf_ws_port
