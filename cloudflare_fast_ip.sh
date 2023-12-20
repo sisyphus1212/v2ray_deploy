@@ -4,7 +4,7 @@ SCRIPT=$(pwd)/get_fast_ip.sh
 [ $2 ] && timeout=$2 || timeout=300
 CMD="$SCRIPT --speed ${speed} --timeout ${timeout}"
 
-#bash ${CMD}
+bash ${CMD}
 
 BACKENDSH=/run/v2ray_deploy/cloudflare_fast_ip_backend.sh
 chmod  0777 ${BACKENDSH}
