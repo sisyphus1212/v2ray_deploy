@@ -1,7 +1,7 @@
 [Unit]
 Description=Timer to filter high speed ip for local optimization
 [Timer]
-OnUnitInactiveSec=100min
+OnUnitInactiveSec=300min
 Persistent=true
 
 [Install]
