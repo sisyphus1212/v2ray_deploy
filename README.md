@@ -8,7 +8,7 @@ pip install flask
 
 cp proxy_mgt.env /etc/proxy_mgt.env
 
-sh ./proxy-mgmt_init.sh
+bash ./r_get_fast_ip_0.sh
 
 # 本地加速(wsl)
 bash ./l_get_fast_ip_0.sh #公司网速限制的用这个
@@ -31,6 +31,8 @@ TODO
 
 订阅链接为http://本机ip:5000/local-fast-ip
 
+# v2ray 代理状态监测
+TODO
 
 # 流量查询
 订阅链接为http://7.7.7.7:5000//statics
