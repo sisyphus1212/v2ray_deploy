@@ -55,6 +55,7 @@ run_my_script() {
     # 如果你是在国内服务器上下载，那么请使用下面这几个镜像加速：
     if [ $GET_REMOTE ]; then
       sshpass -p $PROXY_HOST_SSH_PASSWORD ssh -p $PROXY_HOST_SSH_PORT $PROXY_HOST_SSH_USER@$PROXY_HOST_ADD bash << EOF
+      rm CloudflareST_linux_amd64.tar.gz* -rf
       curl -s https://api.github.com/repos/XIU2/CloudflareSpeedTest/releases/latest | jq -r '.assets[].browser_download_url' | grep "linux_amd64" | xargs -n 1 -I {} wget  {}
 EOF
       [ $? -gt 0 ] && return 1
