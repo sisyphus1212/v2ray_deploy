@@ -15,7 +15,8 @@ ssh -i  ${PRIVATE_KEY} -t ${PROXY_HOST_SSH_USER}@${PROXY_HOST_ADD} sudo bash << 
 sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
 sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
 sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
-apt install whois -y
+apt update
+apt install whois iptables curl jq -y
 mkpasswd -m sha-512 ${PROXY_HOST_SSH_PASSWORD} | xargs -I {} usermod -p {} root  || { echo "mkpasswd failed"; exit 1; }
 sed -i 's/#Port 22/Port ${PROXY_HOST_SSH_PORT}/' /etc/ssh/sshd_config
 systemctl restart sshd
