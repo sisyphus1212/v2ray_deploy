@@ -7,7 +7,7 @@ cp -f  ./proxy-mgmt.service /etc/systemd/system/proxy-mgmt.service
 SCRIPT=$(pwd)/get_fast_ip.sh
 [ $1 ] && speed=$1 || speed=5
 [ $2 ] && timeout=$2 || timeout=300
-CMD="$GET_REMOTE $SCRIPT --speed ${speed} --timeout ${timeout}"
+CMD="GET_REMOTE=$GET_REMOTE $SCRIPT --speed ${speed} --timeout ${timeout}"
 
 BACKENDSH=/run/v2ray_deploy/cloudflare_fast_ip_backend.sh
 mkdir -p `dirname $BACKENDSH`
