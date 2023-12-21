@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 PRIVATE_KEY=$1
 SERVER_ADDRESS=$3
 USER_NAME=$2

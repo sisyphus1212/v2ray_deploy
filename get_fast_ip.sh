@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 # 最大重试次数
 MAX_RETRIES=5

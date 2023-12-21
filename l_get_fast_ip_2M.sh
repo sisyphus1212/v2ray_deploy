@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 LOG="/root/v2ray_fastip_runing.log"
 size_limit=$((10*1024*1024))
 if [ -e "$LOG" ]; then

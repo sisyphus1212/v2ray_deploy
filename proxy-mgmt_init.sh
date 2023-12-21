@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 sed -i "s#/path/to/proxy_mgt.py#$(pwd)/proxy_mgt.py#g" ./proxy-mgmt.service
 cp -f  ./proxy-mgmt_restart.service /etc/systemd/system/proxy-mgmt_restart.service
 cp -f  ./proxy-mgmt_restart.timer /etc/systemd/system/proxy-mgmt_restart.timer
@@ -15,7 +15,7 @@ touch ${BACKENDSH}
 chmod  0777 ${BACKENDSH}
 
 cat << EOF > ${BACKENDSH}
-#!/bin/bash
+#!/usr/bin/bash
 set -a
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 http_proxy=$http_proxy

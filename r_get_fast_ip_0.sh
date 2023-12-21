@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 LOG="/root/v2ray_fastip_runing.log"
 touch $LOG
