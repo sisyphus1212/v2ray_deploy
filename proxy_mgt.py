@@ -289,7 +289,7 @@ cat /proc/net/dev | grep -v "lo:" | grep -Ev "Inter|face" | awk '{
     tx_bytes=$10;
     rx_gbits = rx_bytes * 8 / (8*1024*1024*1024) ;
     tx_gbits = tx_bytes * 8 / (8*1024*1024*1024) ;
-    printf "%s RX: %.2f Gbits TX: %.2f Gbits\\n", interface, rx_gbits, tx_gbits;
+    printf "%s RX: %.2f Gbyte TX: %.2f Gbyte\\n", interface, rx_gbits, tx_gbits;
 }'
 '''
     status, output=executor.execute_ab(remote_cmd);
@@ -323,9 +323,10 @@ def local_fast_ip():
     fast_ips = read_fast_ips()
     filetime = get_file_time()
     vmess_order_lists = []
-    cmd = '''bash << 'EOF'  2> /dev/null
-    curl http://117.50.175.8:5000/allow-ip | grep "vmess://" -m 1 |sed 's/vmess:\/\///' |base64 -d
-EOF'''
+    v2ray_order_ip = os.environ.get('V2_ORDER_IP')
+    cmd = '''V2_ORDER_IP=%s bash << 'EOF'  2> /dev/null
+    curl http://${V2_ORDER_IP}:5000/allow-ip | grep "vmess://" -m 1 |sed 's/vmess:\/\///' |base64 -d
+EOF'''%(v2ray_order_ip)
     v2ray_client_json = ""
     status, output = subprocess.getstatusoutput(cmd)
     if status != 0 or len(output) == 0:

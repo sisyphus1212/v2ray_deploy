@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 
 # 最大重试次数
 MAX_RETRIES=5
@@ -42,6 +42,7 @@ done
 
 # 一个函数，包含原脚本的主要逻辑
 run_my_script() {
+   . /etc/proxy_mgt.env
     CloudflareST_PATH=/root/CloudflareST
     mkdir -p ${CloudflareST_PATH}
 
@@ -52,7 +53,20 @@ run_my_script() {
     # 下载 CloudflareST 压缩包（自行根据需求替换 URL 中 [版本号] 和 [文件名]）
     #wget -N https://github.com/XIU2/CloudflareSpeedTest/releases/download/latest && tar -zxf CloudflareST_linux_amd64.tar.gz || exit 1
     # 如果你是在国内服务器上下载，那么请使用下面这几个镜像加速：
-    curl -s https://api.github.com/repos/XIU2/CloudflareSpeedTest/releases/latest | jq -r '.assets[].browser_download_url' | grep "linux_amd64" | xargs -n 1 -I {} wget  {} && tar -zxf CloudflareST_linux_amd64.tar.gz || return 1
+    if [ $GET_REMOTE ]; then
+      sshpass -p $PROXY_HOST_SSH_PASSWORD ssh -p $PROXY_HOST_SSH_PORT $PROXY_HOST_SSH_USER@$PROXY_HOST_ADD bash << EOF
+      rm CloudflareST_linux_amd64.tar.gz* -rf
+      curl -s https://api.github.com/repos/XIU2/CloudflareSpeedTest/releases/latest | jq -r '.assets[].browser_download_url' | grep "linux_amd64" | xargs -n 1 -I {} wget  {}
+EOF
+      [ $? -gt 0 ] && return 1
+      sshpass -p $PROXY_HOST_SSH_PASSWORD scp -P $PROXY_HOST_SSH_PORT $PROXY_HOST_SSH_USER@$PROXY_HOST_ADD:/root/CloudflareST_linux_amd64.tar.gz ${CloudflareST_PATH}/CloudflareST_linux_amd64.tar.gz
+      [ $? -gt 0 ] && return 1
+      tar -zxf CloudflareST_linux_amd64.tar.gz
+      [ $? -gt 0 ] && return 1
+    else
+      curl -s https://api.github.com/repos/XIU2/CloudflareSpeedTest/releases/latest | jq -r '.assets[].browser_download_url' | grep "linux_amd64" | xargs -n 1 -I {} wget  {} && tar -zxf CloudflareST_linux_amd64.tar.gz || return 1
+    fi
+
     # wget -N https://download.fgit.gq/XIU2/CloudflareSpeedTest/releases/download/v2.2.4/CloudflareST_linux_amd64.tar.gz
     # wget -N https://ghproxy.com/https://github.com/XIU2/CloudflareSpeedTest/releases/download/v2.2.4/CloudflareST_linux_amd64.tar.gz
     # 如果下载失败的话，尝试删除 -N 参数（如果是为了更新，则记得提前删除旧压缩包 rm CloudflareST_linux_amd64.tar.gz ）
