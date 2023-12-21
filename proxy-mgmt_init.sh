@@ -10,8 +10,9 @@ SCRIPT=$(pwd)/get_fast_ip.sh
 CMD="$GET_REMOTE $SCRIPT --speed ${speed} --timeout ${timeout}"
 
 BACKENDSH=/run/v2ray_deploy/cloudflare_fast_ip_backend.sh
-chmod  0777 ${BACKENDSH}
 mkdir -p `dirname $BACKENDSH`
+touch ${BACKENDSH}
+chmod  0777 ${BACKENDSH}
 
 cat << EOF > ${BACKENDSH}
 #!/bin/bash
