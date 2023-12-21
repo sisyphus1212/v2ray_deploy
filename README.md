@@ -11,6 +11,8 @@ cp proxy_mgt.env /etc/proxy_mgt.env
 bash ./r_get_fast_ip_0.sh
 
 # 本地加速(wsl)
+export V2_ORDER_IP="x.x.x.x"
+
 bash ./l_get_fast_ip_0.sh #公司网速限制的用这个
 
 bash ./l_get_fast_ip_2.sh #公司网速限制大于5M的用这个
