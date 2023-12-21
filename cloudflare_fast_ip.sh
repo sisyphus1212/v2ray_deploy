@@ -7,7 +7,7 @@ CMD="$SCRIPT --speed ${speed} --timeout ${timeout}"
 BACKENDSH=/run/v2ray_deploy/cloudflare_fast_ip_backend.sh
 chmod  0777 ${BACKENDSH}
 mkdir -p `dirname $BACKENDSH`
-chmod
+
 cat << EOF > ${BACKENDSH}
 #!/bin/bash
 set -a
