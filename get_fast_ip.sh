@@ -42,7 +42,8 @@ done
 
 # 一个函数，包含原脚本的主要逻辑
 run_my_script() {
-   . /etc/proxy_mgt.env
+   env_path=/etc/proxy_mgt.env
+   [ -f ${env_path} ] && . ${env_path}
     CloudflareST_PATH=/root/CloudflareST
     mkdir -p ${CloudflareST_PATH}
 
