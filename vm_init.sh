@@ -59,19 +59,6 @@ else
     SSH_OPT="ssh -i  -o StrictHostKeyChecking=no ${SSH_KEY} -t ${PROXY_HOST_SSH_USER}@${PROXY_HOST_ADDRESS}"
 fi
 
-cat << EOF
-PROXY_HOST_SSH_USER=${PROXY_HOST_SSH_USER}
-PROXY_HOST_ADD=${PROXY_HOST_ADDRESS}
-PROXY_HOST_SSH_PASSWORD=${PROXY_HOST_SSH_PASSWORD}
-PROXY_HOST_SSH_PORT=${PROXY_HOST_SSH_PORT}
-#v2ray and cf config
-PROXY_V2_UUID=${PROXY_V2_UUID}
-PROXY_V2_ALTERID=${PROXY_V2_ALTERID}
-PROXY_V2_PORT=${PROXY_V2_PORT}
-PROXY_V2_CF_URI=${PROXY_V2_CF_URI}
-PROXY_V2_CF_PORT=${PROXY_V2_CF_PORT}
-EOF
-
 ${SSH_OPT} sudo bash << EOF
 sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
 sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
@@ -85,7 +72,7 @@ EOF
 
 cat << EOF > /etc/proxy_mgt.env
 PROXY_HOST_SSH_USER=${PROXY_HOST_SSH_USER}
-PROXY_HOST_ADD=${PROXY_HOST_ADD}
+PROXY_HOST_ADD=${PROXY_HOST_ADDRESS}
 PROXY_HOST_SSH_PASSWORD=${PROXY_HOST_SSH_PASSWORD}
 PROXY_HOST_SSH_PORT=${PROXY_HOST_SSH_PORT}
 #v2ray and cf config
