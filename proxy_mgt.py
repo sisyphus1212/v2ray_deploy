@@ -477,6 +477,7 @@ def init_v2ray(password, user, host, port):
     else:
         logger.error("v2ray.service transfer failed.")
 
+    logger.info("access_Log_check!")
     access_Log_check = "touch %s && chmod 0666 %s"%(access_Log, access_Log)
     error_Log_check = "touch %s && chmod 0666 %s"%(error_Log, error_Log)
     status, _ = executor.execute(error_Log_check)
@@ -489,6 +490,7 @@ def init_v2ray(password, user, host, port):
         print("access_Log config err")
         return False
 
+    logger.info("systemctl daemon-reload!")
     reload_system_config = "systemctl daemon-reload"
     status, output = executor.execute(reload_system_config)
     if status:
