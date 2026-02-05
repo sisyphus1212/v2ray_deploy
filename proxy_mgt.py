@@ -402,10 +402,10 @@ def scp_transfer(src_path,  dst_path, username, remote_host, remote_port, passwo
     return False
 
 def get_wan_ip():
-    conn = http.client.HTTPSConnection("api.ipify.org")
-    conn.request("GET", "/")
-    response = conn.getresponse()
-    return response.read().decode()
+    #conn = http.client.HTTPSConnection("api.ipify.org")
+    #conn.request("GET", "/")
+    #response = conn.getresponse()
+    return "117.50.175.8" #response.read().decode()
 
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -534,6 +534,7 @@ if __name__ == '__main__':
     if init_v2ray(password, user, host, port):
         logger.error(f"init v2ray Error")
         exit(1)
+
     logger.info("init_iptables!")
     if init_iptables():
         print("Running in remote mode !!")
