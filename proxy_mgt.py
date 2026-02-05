@@ -509,6 +509,7 @@ def init_v2ray(password, user, host, port):
         logger.error(f"Failed to start v2ray Error: {output}")
         return False
     logger.info("v2ray start successfully: at %s:%d!"%(host, v2ray_port))
+    return True
 
 import argparse
 
@@ -533,7 +534,7 @@ if __name__ == '__main__':
     if init_v2ray(password, user, host, port):
         logger.error(f"init v2ray Error")
         exit(1)
-
+    logger.info("init_iptables!")
     if init_iptables():
         print("Running in remote mode !!")
         app.run(host="0.0.0.0", port=5000)
