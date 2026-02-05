@@ -46,7 +46,7 @@ logger = LoggerAdapter(to_stdout=True)
 
 iptables_rules_dict = {
     "AllowIpTCP": "INPUT -p tcp -s %s -j ACCEPT",
-    "DropTCPSyn": "INPUT -p tcp --syn -j DROP",
+    #"DropTCPSyn": "INPUT -p tcp --syn -j DROP",
     "DropIcmpSyn": "INPUT -p icmp -j DROP",
     "AllowDNSUDP": "INPUT -p udp --sport 53 -j ACCEPT",
     "AllowDNSTCP": "INPUT -p tcp --sport 53 -j ACCEPT",
