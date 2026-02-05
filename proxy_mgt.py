@@ -66,7 +66,7 @@ iptable_init_rules = [
     iptables_rules_dict["AllowDNSUDP"],
     iptables_rules_dict["AllowDNSTCP"],
     iptables_rules_dict["AllowLoopback"],
-    iptables_rules_dict["DropTCPSyn"],
+    #iptables_rules_dict["DropTCPSyn"],
     iptables_rules_dict["DropIcmpSyn"]
 ]
 
