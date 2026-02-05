@@ -531,7 +531,7 @@ if __name__ == '__main__':
     host = os.environ.get('PROXY_HOST_ADD')
     port = os.environ.get('PROXY_HOST_SSH_PORT')
     executor = RemoteExecutor(password, user, host, port)  # 使用外部参数来初始化
-    if init_v2ray(password, user, host, port):
+    if not init_v2ray(password, user, host, port):
         logger.error(f"init v2ray Error")
         exit(1)
 
