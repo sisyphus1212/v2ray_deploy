@@ -502,12 +502,13 @@ def init_v2ray(password, user, host, port):
     if status != 0:
         logger.error(f"v2ray stop err: {output}")
         # If v2ray service is not active, download and execute the installation script remotely
+    logger.info("systemctl start v2ray！")
     start_v2ray_cmd = "systemctl start v2ray"
     status, output = executor.execute(start_v2ray_cmd)
     if status:
         logger.error(f"Failed to start v2ray Error: {output}")
         return False
-    print("v2ray start successfully: at %s:%d!"%(host, v2ray_port))
+    logger.info("v2ray start successfully: at %s:%d!"%(host, v2ray_port))
 
 import argparse
 
