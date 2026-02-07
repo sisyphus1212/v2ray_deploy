@@ -251,41 +251,60 @@ def get_file_time(file_path='/root/CloudflareST/results.csv'):
     except Exception as e:
         # 返回异常信息
         return [f"出现错误: {e}"]
-
 @app.route('/change_port', methods=['GET'])
 def change_port():
     global bak_v2ray_port
 
-    # 1. 生成新的随机端口 (20000-30000 范围，保持与 init_v2ray 一致)
+    # 1. 生成新端口并执行远程修改 (20000-30000 范围)
     new_port = random.randint(20000, 30000)
     logger.info(f"Changing v2ray_bak port from {bak_v2ray_port} to {new_port}")
 
-    # 2. 直接在远程机器上通过 sed 修改配置文件
-    # 查找 "port": 旧端口 并替换为 "port": 新端口
+    # 远程 sed 修改配置文件
     remote_sed_cmd = f"sed -i 's/\"port\": {bak_v2ray_port}/\"port\": {new_port}/g' /usr/local/etc/v2ray/config_bak.json"
     status, output = executor.execute(remote_sed_cmd)
 
     if status != 0:
-        logger.error(f"Failed to update remote config via sed: {output}")
-        return f"Failed to update remote config", 500
+        logger.error(f"Failed to update remote config: {output}")
+        return "Error: Failed to update remote config", 500
 
-    # 3. 重启备份服务使配置生效
+    # 重启备份服务
     restart_cmd = "systemctl restart v2ray_bak"
-    status, output = executor.execute(restart_cmd)
+    status, _ = executor.execute(restart_cmd)
+    if status != 0:
+        return "Error: Failed to restart v2ray_bak", 500
 
-    if status == 0:
-        old_port = bak_v2ray_port
-        bak_v2ray_port = new_port  # 更新本地全局变量，确保 /allow-ip 拿到的端口是新的
-        logger.info(f"v2ray_bak port updated to {new_port} and service restarted.")
-        return {
-            "status": "success",
-            "old_port": old_port,
-            "new_port": bak_v2ray_port,
-            "message": "v2ray_bak port changed successfully."
-        }
-    else:
-        logger.error(f"Failed to restart v2ray_bak service: {output}")
-        return f"Failed to restart service", 500
+    # 更新内存中的全局变量
+    bak_v2ray_port = new_port
+
+    # 2. 构造返回的 vmess 列表 (复用 local_fast_ip 的逻辑)
+    fast_ips = read_fast_ips()
+    filetime = get_file_time()
+    vmess_order_lists = []
+
+    # 获取基础配置模板 (参考 allow-ip 的逻辑填充)
+    # 注意：这里需要确保 v2ray_client_json 已经包含了最新的 id, aid 等信息
+    v2ray_client_json["port"] = bak_v2ray_port  # 关键：使用新端口
+    v2ray_client_json["tls"] = ""              # 直连通常不带 TLS
+
+    if len(fast_ips):
+        for ip in fast_ips:
+            # 构造 PS 标签
+            ret = "%s-change-port-ip" % (filetime[0])
+
+            # 深度拷贝一份配置，避免循环中互相干扰
+            current_config = copy.deepcopy(v2ray_client_json)
+            current_config["ps"] = ret
+            current_config["add"] = ip
+
+            # 序列化为 base64
+            data_bytes = json.dumps(current_config).encode('utf-8')
+            main_data_base64 = base64.b64encode(data_bytes)
+            vmess_order_lists.append("vmess://" + main_data_base64.decode('utf-8'))
+
+    # 打印并返回 vmess 列表字符串
+    result = "\n".join(vmess_order_lists)
+    print(result)
+    return result
 
 @app.route('/allow-ip', methods=['GET'])
 def allow_ip():
