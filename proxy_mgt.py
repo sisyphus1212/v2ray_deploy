@@ -252,6 +252,40 @@ def get_file_time(file_path='/root/CloudflareST/results.csv'):
         # 返回异常信息
         return [f"出现错误: {e}"]
 
+@app.route('/change_port', methods=['GET'])
+def change_port():
+    global bak_v2ray_port
+
+    # 1. 生成新的随机端口 (20000-30000 范围，保持与 init_v2ray 一致)
+    new_port = random.randint(20000, 30000)
+    logger.info(f"Changing v2ray_bak port from {bak_v2ray_port} to {new_port}")
+
+    # 2. 直接在远程机器上通过 sed 修改配置文件
+    # 查找 "port": 旧端口 并替换为 "port": 新端口
+    remote_sed_cmd = f"sed -i 's/\"port\": {bak_v2ray_port}/\"port\": {new_port}/g' /usr/local/etc/v2ray/config_bak.json"
+    status, output = executor.execute(remote_sed_cmd)
+
+    if status != 0:
+        logger.error(f"Failed to update remote config via sed: {output}")
+        return f"Failed to update remote config", 500
+
+    # 3. 重启备份服务使配置生效
+    restart_cmd = "systemctl restart v2ray_bak"
+    status, output = executor.execute(restart_cmd)
+
+    if status == 0:
+        old_port = bak_v2ray_port
+        bak_v2ray_port = new_port  # 更新本地全局变量，确保 /allow-ip 拿到的端口是新的
+        logger.info(f"v2ray_bak port updated to {new_port} and service restarted.")
+        return {
+            "status": "success",
+            "old_port": old_port,
+            "new_port": bak_v2ray_port,
+            "message": "v2ray_bak port changed successfully."
+        }
+    else:
+        logger.error(f"Failed to restart v2ray_bak service: {output}")
+        return f"Failed to restart service", 500
 
 @app.route('/allow-ip', methods=['GET'])
 def allow_ip():
