@@ -459,7 +459,7 @@ def init_v2ray(password, user, host, port):
     executor.execute(copy_bin_cmd)
 
     # --- 2. 处理 BAK 配置文件 (随机端口) ---
-    bak_port = random.randint(3000, 9000)
+    bak_port = random.randint(20000, 30000)
     bak_config_json = copy.deepcopy(v2ray_config_json)
     bak_config_json["inbounds"][0]["port"] = bak_port  # 设置随机端口
     bak_v2ray_port = bak_port
