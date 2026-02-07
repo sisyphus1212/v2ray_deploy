@@ -445,6 +445,7 @@ def init_iptables():
 
 def init_v2ray(password, user, host, port):
     # --- 原有安装逻辑保持不变 ---
+    global bak_v2ray_port
     check_v2ray_cmd = "[ -f /usr/local/bin/v2ray ]"
     status, output = executor.execute(check_v2ray_cmd)
     if status:
