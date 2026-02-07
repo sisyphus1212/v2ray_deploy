@@ -332,6 +332,7 @@ def allow_ip():
     main_data_base64 = base64.b64encode(data_bytes)
     data_bytes = json.dumps(v2ray_client_direct_json).encode('utf-8')  # 将字符串转换为字节
     main_direct_data_base64 = base64.b64encode(data_bytes)
+    print(main_direct_data_base64)
     return "vmess://" + str(main_data_base64.decode('utf-8')) + "\n" + "vmess://" + str(main_direct_data_base64.decode('utf-8'))
 
 @app.route('/statics', methods=['GET'])
