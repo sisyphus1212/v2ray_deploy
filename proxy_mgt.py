@@ -273,38 +273,21 @@ def change_port():
     if status != 0:
         return "Error: Failed to restart v2ray_bak", 500
 
-    # 更新内存中的全局变量
+    now_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    ret = f"time:{now_time}-port-{bak_v2ray_port}-changed-to-{new_port}"
     bak_v2ray_port = new_port
 
-    # 2. 构造返回的 vmess 列表 (复用 local_fast_ip 的逻辑)
-    fast_ips = read_fast_ips()
-    filetime = get_file_time()
-    vmess_order_lists = []
+    current_config = copy.deepcopy(v2ray_client_json)
+    current_config["ps"] = ret          # 仅仅通过 ps 返回修改后的信息
+    current_config["add"] = executor.host
+    current_config["port"] = bak_v2ray_port
+    current_config["tls"] = ""
 
-    # 获取基础配置模板 (参考 allow-ip 的逻辑填充)
-    # 注意：这里需要确保 v2ray_client_json 已经包含了最新的 id, aid 等信息
-    v2ray_client_json["port"] = bak_v2ray_port  # 关键：使用新端口
-    v2ray_client_json["tls"] = ""              # 直连通常不带 TLS
+    # 编码并返回
+    data_bytes = json.dumps(current_config).encode('utf-8')
+    main_data_base64 = base64.b64encode(data_bytes)
 
-    if len(fast_ips):
-        for ip in fast_ips:
-            # 构造 PS 标签
-            ret = "%s-change-port-ip" % (filetime[0])
-
-            # 深度拷贝一份配置，避免循环中互相干扰
-            current_config = copy.deepcopy(v2ray_client_json)
-            current_config["ps"] = ret
-            current_config["add"] = ip
-
-            # 序列化为 base64
-            data_bytes = json.dumps(current_config).encode('utf-8')
-            main_data_base64 = base64.b64encode(data_bytes)
-            vmess_order_lists.append("vmess://" + main_data_base64.decode('utf-8'))
-
-    # 打印并返回 vmess 列表字符串
-    result = "\n".join(vmess_order_lists)
-    print(result)
-    return result
+    return "vmess://" + main_data_base64.decode('utf-8')
 
 @app.route('/allow-ip', methods=['GET'])
 def allow_ip():
