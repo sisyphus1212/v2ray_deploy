@@ -72,6 +72,7 @@ iptable_init_rules = [
 
 v2ray_id = os.environ.get('PROXY_V2_UUID') #str(uuid.uuid4())
 v2ray_port = int(os.environ.get('PROXY_V2_PORT')) #random.randint(10000,40000)
+bak_v2ray_port = 30000
 debug_port = 33963 #random.randint(10000,40000)
 cf_ws_port = int(os.environ.get('PROXY_V2_CF_PORT'))
 cf_uri = os.environ.get('PROXY_V2_CF_URI')
@@ -272,7 +273,7 @@ def allow_ip():
     v2ray_client_json["sni"] = cf_uri
     v2ray_client_direct_json = copy.deepcopy(v2ray_client_json)
     v2ray_client_direct_json["add"] = str(executor.host)
-    v2ray_client_direct_json["port"] = v2ray_port
+    v2ray_client_direct_json["port"] = bak_v2ray_port
     v2ray_client_direct_json["tls"] = ""
     data_bytes = json.dumps(v2ray_client_json).encode('utf-8')  # 将字符串转换为字节
     main_data_base64 = base64.b64encode(data_bytes)
@@ -460,6 +461,7 @@ def init_v2ray(password, user, host, port):
     bak_port = random.randint(20000, 50000)
     bak_config_json = copy.deepcopy(v2ray_config_json)
     bak_config_json["inbounds"][0]["port"] = bak_port  # 设置随机端口
+    bak_v2ray_port = bak_port
 
     bak_config_local_path = f"{BDIR}/v2ray_config_bak"
     with open(bak_config_local_path, "w") as f:
