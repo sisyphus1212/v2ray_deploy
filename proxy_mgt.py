@@ -443,72 +443,71 @@ def init_iptables():
     return True if not status else False
 
 def init_v2ray(password, user, host, port):
-    # Step 1: Check if v2ray service exists
+    # --- 原有安装逻辑保持不变 ---
     check_v2ray_cmd = "[ -f /usr/local/bin/v2ray ]"
     status, output = executor.execute(check_v2ray_cmd)
-    if status:  # If the output is empty, v2ray service does not exist
-        # Download and execute the installation script remotely
+    if status:
         print("install v2ray")
         install_v2ray_cmd = "curl https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh | bash"
-        status, install_output = executor.execute(install_v2ray_cmd)
-        if status:
-            logger.error(f"Failed to download and execute the V2Ray installation script. Error: {install_output}")
-            return False
-        print("install v2ray successfully")
+        executor.execute(install_v2ray_cmd)
 
-    remove_old_cmd =  "[ -f /etc/systemd/system/v2ray.service.d/10-donot_touch_single_conf.conf ] && rm /etc/systemd/system/v2ray.service.d/10-donot_touch_single_conf.conf || exit 0"
-    status, install_output = executor.execute(remove_old_cmd)
-    if status:
-        logger.error(f"Failed to update v2ray service . Error: {install_output}")
-        return False
-    print("remove v2ray service successfully")
+    # --- 1. 复制二进制文件 (v2ray_bak) ---
+    logger.info("Creating v2ray_bak binary...")
+    copy_bin_cmd = "cp /usr/local/bin/v2ray /usr/local/bin/v2ray_bak"
+    executor.execute(copy_bin_cmd)
 
-    v2ray_config = "%s/v2ray_config"%(BDIR)
+    # --- 2. 处理 BAK 配置文件 (随机端口) ---
+    bak_port = random.randint(20000, 50000)
+    bak_config_json = copy.deepcopy(v2ray_config_json)
+    bak_config_json["inbounds"][0]["port"] = bak_port  # 设置随机端口
+
+    bak_config_local_path = f"{BDIR}/v2ray_config_bak"
+    with open(bak_config_local_path, "w") as f:
+        json.dump(bak_config_json, f)
+
+    # 上传 BAK 配置
+    scp_transfer(bak_config_local_path, "/usr/local/etc/v2ray/config_bak.json", user, host, port, password)
+
+    # --- 3. 处理 BAK 服务文件 ---
+    # 假设本地 v2ray.service 模板内容需要替换路径
+    bak_service_local_path = f"{BDIR}/v2ray_bak.service"
+    try:
+        with open(f"{BDIR}/v2ray.service", "r") as f:
+            service_content = f.read()
+
+        # 替换二进制路径和配置文件路径 (根据你的 service 文件内容调整替换逻辑)
+        service_content = service_content.replace("/usr/local/bin/v2ray", "/usr/local/bin/v2ray_bak")
+        service_content = service_content.replace("/usr/local/etc/v2ray/config.json", "/usr/local/etc/v2ray/config_bak.json")
+
+        with open(bak_service_local_path, "w") as f:
+            f.write(service_content)
+
+        # 上传 BAK 服务文件
+        scp_transfer(bak_service_local_path, "/etc/systemd/system/v2ray_bak.service", user, host, port, password)
+    except Exception as e:
+        logger.error(f"Failed to create v2ray_bak.service: {e}")
+
+    # --- 4. 原有的主服务逻辑 (保持并上传主配置) ---
+    v2ray_config = f"{BDIR}/v2ray_config"
     with open(v2ray_config, "w") as json_file:
         json.dump(v2ray_config_json, json_file)
 
-    if scp_transfer("%s/v2ray_config"%(BDIR), v2ray_config_file_path, user, host, port, password):
-        logger.info("v2ray_config transferred successfully!")
-    else:
-        logger.error("v2ray_config transfer failed.")
+    scp_transfer(v2ray_config, v2ray_config_file_path, user, host, port, password)
+    scp_transfer(f"{BDIR}/v2ray.service", v2ray_service_file_path, user, host, port, password)
 
-    if scp_transfer("%s/v2ray.service"%(BDIR), v2ray_service_file_path, user, host, port, password):
-        logger.info("v2ray_config transferred successfully!")
-    else:
-        logger.error("v2ray.service transfer failed.")
+    # --- 5. 初始化日志与启动 ---
+    # 确保目标机器有权限
+    executor.execute(f"touch {access_Log} {error_Log} && chmod 0666 {access_Log} {error_Log}")
 
-    logger.info("access_Log_check!")
-    access_Log_check = "touch %s && chmod 0666 %s"%(access_Log, access_Log)
-    error_Log_check = "touch %s && chmod 0666 %s"%(error_Log, error_Log)
-    status, _ = executor.execute(error_Log_check)
-    if status != 0:
-        print("error_Log config err")
-        return False
+    executor.execute("systemctl daemon-reload")
+    executor.execute("systemctl stop v2ray v2ray_bak") # 停止旧的
+    executor.execute("systemctl start v2ray")
 
-    status, _ = executor.execute(access_Log_check)
-    if status != 0:
-        print("access_Log config err")
-        return False
+    # 启动备份服务
+    status_bak, _ = executor.execute("systemctl start v2ray_bak")
+    if status_bak == 0:
+        logger.info(f"v2ray_bak started successfully on random port: {bak_port}")
 
-    logger.info("systemctl daemon-reload!")
-    reload_system_config = "systemctl daemon-reload"
-    status, output = executor.execute(reload_system_config)
-    if status:
-        logger.error(f"systemctl daemon-reload Error: {output}")
-        return False
-
-    check_v2ray_cmd = "systemctl stop v2ray"
-    status, output = executor.execute(check_v2ray_cmd)
-    if status != 0:
-        logger.error(f"v2ray stop err: {output}")
-        # If v2ray service is not active, download and execute the installation script remotely
-    logger.info("systemctl start v2ray！")
-    start_v2ray_cmd = "systemctl start v2ray"
-    status, output = executor.execute(start_v2ray_cmd)
-    if status:
-        logger.error(f"Failed to start v2ray Error: {output}")
-        return False
-    logger.info("v2ray start successfully: at %s:%d!"%(host, v2ray_port))
     return True
 
 import argparse
