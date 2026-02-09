@@ -295,8 +295,8 @@ def allow_ip():
     origin_ip = request.remote_addr
     rule = iptables_rules_dict["AllowIpTCP"] % origin_ip
     if not rule_exists(executor, rule):
-        remote_cmd = iptables_action["insert"] +  rule
-        status, output = executor.execute(remote_cmd)
+        #remote_cmd = iptables_action["insert"] +  rule
+        #status, output = executor.execute(remote_cmd)
         ret = f"{origin_ip} allowed on {executor.host}"
     if not ret:
         ret = f"{origin_ip} exists on {executor.host}"
