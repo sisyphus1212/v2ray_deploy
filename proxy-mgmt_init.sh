@@ -24,7 +24,7 @@ GET_REMOTE=$GET_REMOTE
 set +a
 bash ${CMD}
 EOF
-
+bash ./kill_all.sh
 if [ -n "$(pidof systemd)" ]; then
     sed  -i "s|ExecStart=cmd|ExecStart=${BACKENDSH}|g" ./cloudflare_fast_ip.service
     cp -f ./cloudflare_fast_ip.service /etc/systemd/system/cloudflare_fast_ip.service
@@ -44,7 +44,6 @@ else
     crontab -l | sort | uniq | crontab -
 fi
 
-bash ./kill_all.sh
 sudo systemctl daemon-reload
 sudo systemctl start proxy-mgmt_restart.timer
 sudo systemctl enable proxy-mgmt_restart.timer
