@@ -1,4 +1,12 @@
-项目目的:打造v2ray高级防封解决方案
+# 快速开始
+在云服务器上
+bash ./proxy-mgmt_init.sh
+
+#原理
+```
+代理配置服务：proxy-mgmt.service
+cf快速ip定期获取服务：cloudflare_fast_ip.service
+```
 
 # 安装依赖
 pip install flask
