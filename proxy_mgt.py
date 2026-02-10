@@ -457,6 +457,7 @@ def get_local_ip():
     return IP
 
 def init_iptables():
+    return True
     status = 0
     IPAddr = get_wan_ip()
     logger.info("init: Your Computer IP Address is: %s", IPAddr)
