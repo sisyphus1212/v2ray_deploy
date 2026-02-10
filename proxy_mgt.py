@@ -263,7 +263,7 @@ def _probe_v2ray_once():
     """
     探测一次远端 v2ray 状态，返回 (ok(bool), text(str))
     """
-    cmd = r"""bash << 'EOF'
+    cmd = r"""/bin/bash -s << 'EOF'
 ACTIVE=$(systemctl is-active v2ray 2>/dev/null || echo unknown)
 SUB=$(systemctl show v2ray -p SubState --value 2>/dev/null || echo unknown)
 PID=$(systemctl show v2ray -p MainPID --value 2>/dev/null || echo 0)
