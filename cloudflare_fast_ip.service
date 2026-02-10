@@ -1,6 +1,16 @@
 [Unit]
-Description=Restart Proxy Management Service
+Description=Cloudflare Fast IP Backend
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-Type=oneshot
+Type=simple
 ExecStart=cmd
+Restart=always
+RestartSec=3600
+# 可选：输出进 journald
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
