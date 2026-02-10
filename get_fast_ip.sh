@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # get_fast_ip.sh
 # 目标：保持原有逻辑不变，只是把关键步骤加日志，并且下载用 latest/download（不依赖版本号）
+# 关键要求：只有 CloudflareST 真正成功且产出 ./output 后，才 mv ./output -> results.csv
 
 MAX_RETRIES=5
 count=0
@@ -123,16 +124,22 @@ EOF
 
     log "Run CloudflareST..."
     log "Params: -tl ${TIME_LIMIT} -sl ${SPEEDTEST_LIMIT} -dn 13 ${CFCOLO} -url ${SPEEDTEST_URL}"
-    (https_proxy= http_proxy= timeout 600 "${CF_BIN}" \
-        -tl "${TIME_LIMIT}" \
-        -sl "${SPEEDTEST_LIMIT}" \
-        -dn 13 \
-        $CFCOLO \
-        -url "${SPEEDTEST_URL}" \
-        -o ./output) || die "CloudflareST run failed"
+
+    # 组装参数（避免 CFCOLO 为空时分词/参数问题）
+    args=(-tl "${TIME_LIMIT}" -sl "${SPEEDTEST_LIMIT}" -dn 13 -url "${SPEEDTEST_URL}" -o ./output)
+    if [ -n "${CFCOLO}" ]; then
+      # CFCOLO 形如 "-cfcolo xxx" 才追加
+      # shellcheck disable=SC2206
+      args+=(${CFCOLO})
+    fi
+
+    # 成功判定：命令成功 + output 文件存在且非空
+    (https_proxy= http_proxy= timeout 600 "${CF_BIN}" "${args[@]}") \
+      || die "CloudflareST run failed"
+    [ -s ./output ] || die "CloudflareST returned success but ./output missing/empty"
 
     log "CloudflareST run OK, save output -> results.csv"
-    mv ./output results.csv || die "mv output to results.csv failed"
+    mv -f ./output results.csv || die "mv output to results.csv failed"
 
     log "Done. Results: ${CloudflareST_PATH}/results.csv (mtime: $(date -r results.csv '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown))"
     return 0
