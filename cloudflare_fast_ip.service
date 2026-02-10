@@ -1,12 +1,15 @@
 [Unit]
-Description=Cloudflare Fast IP Backend (oneshot)
+Description=Cloudflare Fast IP Backend
 After=network.target
 
 [Service]
-Type=oneshot
-ExecStart=cmd
+Type=simple
 WorkingDirectory=/run/v2ray_deploy
+ExecStart=cmd
 StandardOutput=journal
 StandardError=journal
-# 可选：防止脚本无限卡死（比如 CloudflareST 卡住）
-TimeoutStartSec=1800
+KillMode=control-group
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target
