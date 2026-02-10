@@ -251,6 +251,64 @@ def get_file_time(file_path='/root/CloudflareST/results.csv'):
     except Exception as e:
         # 返回异常信息
         return [f"出现错误: {e}"]
+
+import threading
+import time
+# ---- 全局缓存：由后台线程每 1s 更新一次 ----
+_alive_cache_lock = threading.Lock()
+_alive_cache_text = "v2ray active=unknown sub=unknown pid=0 time=unknown"
+_alive_cache_ok = False
+
+def _probe_v2ray_once():
+    """
+    探测一次远端 v2ray 状态，返回 (ok(bool), text(str))
+    """
+    cmd = r"""bash << 'EOF'
+ACTIVE=$(systemctl is-active v2ray 2>/dev/null || echo unknown)
+SUB=$(systemctl show v2ray -p SubState --value 2>/dev/null || echo unknown)
+PID=$(systemctl show v2ray -p MainPID --value 2>/dev/null || echo 0)
+TS=$(date '+%Y-%m-%d %H:%M:%S')
+echo "v2ray active=${ACTIVE} sub=${SUB} pid=${PID} time=${TS}"
+EOF"""
+    status, output = executor.execute_ab(cmd)
+
+    line = (output or "").strip().splitlines()[-1] if output else "v2ray active=unknown sub=unknown pid=0 time=unknown"
+    # 以 is-active==active 作为存活判断
+    ok = ("active=active" in line)
+    return ok, line
+
+def _alive_probe_loop():
+    global _alive_cache_text, _alive_cache_ok
+    while True:
+        try:
+            ok, text = _probe_v2ray_once()
+            with _alive_cache_lock:
+                _alive_cache_ok = ok
+                _alive_cache_text = text
+        except Exception as e:
+            with _alive_cache_lock:
+                _alive_cache_ok = False
+                _alive_cache_text = f"v2ray active=error sub=unknown pid=0 time={datetime.now().strftime('%Y-%m-%d %H:%M:%S')} err={e}"
+        time.sleep(1)
+
+def start_alive_probe_thread():
+    t = threading.Thread(target=_alive_probe_loop, daemon=True)
+    t.start()
+
+@app.route('/aliva', methods=['GET'])
+def aliva():
+    with _alive_cache_lock:
+        ok = _alive_cache_ok
+        text = _alive_cache_text
+
+    current = copy.deepcopy(v2ray_client_json)
+    current["ps"] = text
+
+    data_bytes = json.dumps(current).encode('utf-8')
+    main_data_base64 = base64.b64encode(data_bytes)
+    return "vmess://" + main_data_base64.decode('utf-8')
+
+
 @app.route('/change_port', methods=['GET'])
 def change_port():
     global bak_v2ray_port
@@ -563,7 +621,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.local == "True":
         print("Running in local mode !!")
-        app.run(host="0.0.0.0", port=5000)
+        start_alive_probe_thread()
+        app.run(host="0.0.0.0", port=5000, threaded=True)
         exit(0)
 
     password = os.environ.get('PROXY_HOST_SSH_PASSWORD')
@@ -578,5 +637,5 @@ if __name__ == '__main__':
     logger.info("init_iptables!")
     if init_iptables():
         print("Running in remote mode !!")
-        app.run(host="0.0.0.0", port=5000)
-
+        start_alive_probe_thread()
+        app.run(host="0.0.0.0", port=5000, threaded=True)
