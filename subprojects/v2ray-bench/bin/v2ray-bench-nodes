@@ -1,0 +1,555 @@
+#!/usr/bin/env python3
+import argparse
+import base64
+import json
+import os
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+from dataclasses import dataclass
+
+try:
+    import fcntl  # type: ignore
+except Exception:  # pragma: no cover
+    fcntl = None
+
+
+def _pick_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
+def _b64decode_any(s: str) -> bytes:
+    s = s.strip()
+    s = s.replace("\n", "").replace("\r", "")
+    pad = "=" * ((4 - (len(s) % 4)) % 4)
+    s_padded = s + pad
+    try:
+        return base64.urlsafe_b64decode(s_padded.encode("utf-8"))
+    except Exception:
+        return base64.b64decode(s_padded.encode("utf-8"))
+
+
+def fetch_subscription(url: str, timeout_s: int) -> str:
+    req = urllib.request.Request(url, headers={"User-Agent": "v2ray-bench-nodes/1.0"})
+    last_err = None
+    for attempt in range(1, 4):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+                raw = resp.read()
+            last_err = None
+            break
+        except Exception as e:
+            last_err = e
+            time.sleep(0.6 * attempt)
+    if last_err is not None:
+        raise last_err
+    try:
+        text = raw.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        text = raw.decode("utf-8", errors="replace")
+
+    if "vmess://" in text:
+        return text
+
+    decoded = _b64decode_any(text).decode("utf-8", errors="replace")
+    return decoded
+
+
+def read_cached_subscription(url: str) -> str | None:
+    candidates = []
+    if "fast_ip" in url:
+        candidates.append("/usr/local/etc/v2ray/subscription.fast_ip.raw")
+    if "allow-ip" in url or "allow_ip" in url:
+        candidates.append("/usr/local/etc/v2ray/subscription.allow-ip.raw")
+    candidates.append("/usr/local/etc/v2ray/subscription.raw")
+
+    for p in candidates:
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                txt = f.read()
+            if "vmess://" in txt:
+                return txt
+        except Exception:
+            continue
+    return None
+
+
+def parse_vmess_lines(text: str):
+    nodes = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or not line.startswith("vmess://"):
+            continue
+        payload_b64 = line[len("vmess://") :]
+        try:
+            payload = _b64decode_any(payload_b64).decode("utf-8", errors="strict")
+            obj = json.loads(payload)
+        except Exception:
+            continue
+
+        addr = obj.get("add") or ""
+        port = int(obj.get("port") or 0)
+        uuid = obj.get("id") or ""
+        alter_id = int(obj.get("aid") or 0)
+        security = obj.get("scy") or "auto"
+        network = obj.get("net") or "ws"
+        host = obj.get("host") or ""
+        path = obj.get("path") or "/"
+        tls = str(obj.get("tls") or "").lower() in ("tls", "1", "true", "yes")
+        sni = obj.get("sni") or host or ""
+        ps = obj.get("ps") or ""
+
+        if not addr or not port or not uuid:
+            continue
+
+        nodes.append(
+            {
+                "ps": ps,
+                "addr": addr,
+                "port": port,
+                "uuid": uuid,
+                "alter_id": alter_id,
+                "security": security,
+                "network": network,
+                "host": host,
+                "path": path,
+                "tls": tls,
+                "sni": sni,
+                "vmess_uri": line,
+            }
+        )
+    return nodes
+
+
+def build_v2ray_config(node: dict, http_port: int):
+    outbound = {
+        "tag": "proxy",
+        "protocol": "vmess",
+        "settings": {
+            "vnext": [
+                {
+                    "address": node["addr"],
+                    "port": node["port"],
+                    "users": [
+                        {
+                            "id": node["uuid"],
+                            "alterId": node["alter_id"],
+                            "security": node["security"],
+                        }
+                    ],
+                }
+            ]
+        },
+        "streamSettings": {
+            "network": node["network"],
+            "security": "tls" if node["tls"] else "none",
+        },
+    }
+
+    if node["tls"]:
+        outbound["streamSettings"]["tlsSettings"] = {
+            "serverName": node["sni"] or node["host"] or node["addr"],
+            "allowInsecure": False,
+        }
+
+    if node["network"] == "ws":
+        ws = {"path": node["path"] or "/"}
+        if node["host"]:
+            ws["headers"] = {"Host": node["host"]}
+        outbound["streamSettings"]["wsSettings"] = ws
+
+    config = {
+        "log": {"loglevel": "warning"},
+        "inbounds": [
+            {
+                "tag": "http-in",
+                "listen": "127.0.0.1",
+                "port": http_port,
+                "protocol": "http",
+                "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
+            }
+        ],
+        "outbounds": [outbound],
+    }
+    return config
+
+
+def run_cmd(args, timeout_s: int | None = None):
+    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout_s)
+
+
+def curl_via_proxy(http_port: int, url: str, max_time_s: int, connect_timeout_s: int):
+    proxy = f"http://127.0.0.1:{http_port}"
+    args = [
+        "curl",
+        "-L",
+        "--silent",
+        "--output",
+        "/dev/null",
+        "-x",
+        proxy,
+        "--connect-timeout",
+        str(connect_timeout_s),
+        "--max-time",
+        str(max_time_s),
+        "-w",
+        "%{http_code} %{speed_download} %{time_total}",
+        url,
+    ]
+    p = run_cmd(args, timeout_s=max_time_s + 5)
+    if p.returncode != 0:
+        return ("000", 0.0, float(max_time_s))
+    parts = p.stdout.strip().split()
+    if len(parts) != 3:
+        return ("000", 0.0, float(max_time_s))
+    return (parts[0], float(parts[1]), float(parts[2]))
+
+
+def get_exit_ip(http_port: int, max_time_s: int):
+    proxy = f"http://127.0.0.1:{http_port}"
+    p = run_cmd(
+        [
+            "curl",
+            "--silent",
+            "-x",
+            proxy,
+            "--connect-timeout",
+            "4",
+            "--max-time",
+            str(max_time_s),
+            "https://ipinfo.io/ip",
+        ],
+        timeout_s=max_time_s + 2,
+    )
+    if p.returncode != 0:
+        return ""
+    return p.stdout.strip()
+
+
+class BenchV2Ray:
+    def __init__(self, config_path: str):
+        self.config_path = config_path
+        self.proc: subprocess.Popen | None = None
+
+    def start(self):
+        self.proc = subprocess.Popen(
+            ["nice", "-n", "19", "v2ray", "run", "-config", self.config_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    def stop(self):
+        if not self.proc:
+            return
+        if self.proc.poll() is not None:
+            return
+        self.proc.terminate()
+        try:
+            self.proc.wait(timeout=4)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait(timeout=4)
+
+
+@dataclass(frozen=True)
+class LogRow:
+    round_id: str
+    started_at: str
+    url: str
+    rank: int
+    idx: int
+    addr: str
+    port: int
+    http_code: str
+    speed_Bps: int
+    time_s: float
+    exit_ip: str
+    ps: str
+    vmess_uri: str
+
+
+def _tsv_sanitize(s: str) -> str:
+    return (s or "").replace("\t", " ").replace("\r", " ").replace("\n", " ")
+
+
+def append_log_rows(log_file: str, rows: list[LogRow]):
+    if not rows:
+        return
+    os.makedirs(os.path.dirname(log_file) or ".", exist_ok=True)
+    header = (
+        "round_id\tstarted_at\turl\trank\tidx\taddr\tport\thttp_code\tspeed_Bps\ttime_s\texit_ip\tps\tvmess_uri\n"
+    )
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+    fd = os.open(log_file, flags, 0o640)
+    try:
+        if fcntl is not None:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            except Exception:
+                pass
+
+        try:
+            st = os.fstat(fd)
+            is_empty = st.st_size == 0
+        except Exception:
+            is_empty = False
+
+        with os.fdopen(fd, "a", encoding="utf-8", closefd=False) as f:
+            if is_empty:
+                f.write(header)
+            for r in rows:
+                f.write(
+                    "\t".join(
+                        [
+                            _tsv_sanitize(r.round_id),
+                            _tsv_sanitize(r.started_at),
+                            _tsv_sanitize(r.url),
+                            str(int(r.rank)),
+                            str(int(r.idx)),
+                            _tsv_sanitize(r.addr),
+                            str(int(r.port)),
+                            _tsv_sanitize(r.http_code),
+                            str(int(r.speed_Bps)),
+                            f"{float(r.time_s):.6f}",
+                            _tsv_sanitize(r.exit_ip),
+                            _tsv_sanitize(r.ps),
+                            _tsv_sanitize(r.vmess_uri),
+                        ]
+                    )
+                    + "\n"
+                )
+    finally:
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        prog="v2ray-bench-nodes",
+        description="Bench vmess subscription nodes by download speed using a separate v2ray instance (won't touch v2ray.service).",
+    )
+    ap.add_argument(
+        "--url",
+        default=None,
+        help="Subscription URL. If omitted, uses first line of /usr/local/etc/v2ray/subscriptions.txt when available.",
+    )
+    ap.add_argument("--bytes", type=int, default=10_000_000, help="Download bytes for speed test (default: 10000000).")
+    ap.add_argument("--timeout", type=int, default=35, help="Max seconds per node test (default: 35).")
+    ap.add_argument("--connect-timeout", type=int, default=8, help="Connect timeout seconds (default: 8).")
+    ap.add_argument("--top", type=int, default=5, help="Show top N results (default: 5).")
+    ap.add_argument("--max-nodes", type=int, default=0, help="Only test first N nodes (0 = all).")
+    ap.add_argument("--sleep", type=float, default=0.8, help="Sleep seconds between nodes (default: 0.8).")
+    ap.add_argument("--show-ip", action="store_true", help="Query and display exit IP for each node.")
+    ap.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Always fetch subscription from URL (otherwise may fall back to cached /usr/local/etc/v2ray/subscription*.raw).",
+    )
+    ap.add_argument(
+        "--log-file",
+        default="/var/log/v2ray-bench.tsv",
+        help="Append fastest results to TSV log (default: /var/log/v2ray-bench.tsv).",
+    )
+    ap.add_argument("--log-top", type=int, default=5, help="How many fastest rows to log per run (default: 5).")
+    ap.add_argument("--no-log", action="store_true", help="Do not write /var/log TSV log.")
+    args = ap.parse_args()
+
+    url = args.url
+    if not url:
+        try:
+            with open("/usr/local/etc/v2ray/subscriptions.txt", "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        url = line
+                        break
+        except Exception:
+            url = None
+
+    if not url:
+        print("error: --url is required (and /usr/local/etc/v2ray/subscriptions.txt not readable)", file=sys.stderr)
+        return 2
+
+    sub_text = None
+    if not args.refresh:
+        sub_text = read_cached_subscription(url)
+    if not sub_text:
+        try:
+            sub_text = fetch_subscription(url, timeout_s=min(20, args.connect_timeout + 12))
+        except Exception as e:
+            cached = read_cached_subscription(url)
+            if cached:
+                sub_text = cached
+            else:
+                print(f"error: failed to fetch subscription: {e}", file=sys.stderr)
+                return 2
+
+    started_at = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    round_id = f"{time.strftime('%Y%m%d-%H%M%S', time.localtime())}-{os.getpid()}"
+
+    nodes = parse_vmess_lines(sub_text)
+    if not nodes:
+        print("error: no vmess nodes found in subscription", file=sys.stderr)
+        return 2
+
+    if args.max_nodes and args.max_nodes > 0:
+        nodes = nodes[: args.max_nodes]
+
+    test_url = f"https://speed.cloudflare.com/__down?bytes={args.bytes}"
+
+    results = []
+    stop_flag = {"stop": False}
+
+    def _handle_sig(_signum, _frame):
+        stop_flag["stop"] = True
+
+    signal.signal(signal.SIGINT, _handle_sig)
+    signal.signal(signal.SIGTERM, _handle_sig)
+
+    for idx, node in enumerate(nodes):
+        if stop_flag["stop"]:
+            break
+
+        http_port = _pick_free_port()
+        cfg = build_v2ray_config(node, http_port=http_port)
+
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json") as tf:
+            json.dump(cfg, tf, indent=2)
+            tf.flush()
+            cfg_path = tf.name
+
+        bench = BenchV2Ray(cfg_path)
+        try:
+            bench.start()
+
+            ready = False
+            for _ in range(15):
+                if stop_flag["stop"]:
+                    break
+                code, speed, total = curl_via_proxy(
+                    http_port=http_port,
+                    url="https://www.google.com/generate_204",
+                    max_time_s=8,
+                    connect_timeout_s=args.connect_timeout,
+                )
+                if code in ("204", "200"):
+                    ready = True
+                    break
+                time.sleep(0.6)
+
+            if not ready:
+                results.append(
+                    {
+                        "idx": idx,
+                        "addr": node["addr"],
+                        "port": node["port"],
+                        "ps": node["ps"],
+                        "code": "000",
+                        "speed_Bps": 0.0,
+                        "time_s": float(args.timeout),
+                        "exit_ip": "",
+                    }
+                )
+                continue
+
+            exit_ip = get_exit_ip(http_port=http_port, max_time_s=10) if args.show_ip else ""
+            code, speed, total = curl_via_proxy(
+                http_port=http_port,
+                url=test_url,
+                max_time_s=args.timeout,
+                connect_timeout_s=args.connect_timeout,
+            )
+
+            results.append(
+                {
+                    "idx": idx,
+                    "addr": node["addr"],
+                    "port": node["port"],
+                    "ps": node["ps"],
+                    "code": code,
+                    "speed_Bps": speed,
+                    "time_s": total,
+                    "exit_ip": exit_ip,
+                }
+            )
+        finally:
+            bench.stop()
+            try:
+                os.unlink(cfg_path)
+            except Exception:
+                pass
+            time.sleep(max(0.0, float(args.sleep)))
+
+    results_sorted = sorted(results, key=lambda r: float(r.get("speed_Bps") or 0.0), reverse=True)
+
+    if not args.no_log and args.log_file:
+        top_n = max(1, int(args.log_top))
+        log_rows: list[LogRow] = []
+        for rank, r in enumerate(results_sorted[:top_n], start=1):
+            try:
+                node = nodes[int(r["idx"])]
+                vmess_uri = node.get("vmess_uri", "")
+            except Exception:
+                vmess_uri = ""
+            log_rows.append(
+                LogRow(
+                    round_id=round_id,
+                    started_at=started_at,
+                    url=url,
+                    rank=rank,
+                    idx=int(r["idx"]),
+                    addr=str(r["addr"]),
+                    port=int(r["port"]),
+                    http_code=str(r["code"]),
+                    speed_Bps=int(float(r["speed_Bps"])),
+                    time_s=float(r["time_s"]),
+                    exit_ip=str(r.get("exit_ip") or ""),
+                    ps=str(r.get("ps") or ""),
+                    vmess_uri=str(vmess_uri),
+                )
+            )
+        try:
+            append_log_rows(args.log_file, log_rows)
+        except PermissionError as e:
+            print(f"warn: cannot write log file {args.log_file}: {e}", file=sys.stderr)
+
+    headers = ["idx", "addr", "port", "code", "speed_Bps", "time_s"]
+    if args.show_ip:
+        headers.append("exit_ip")
+    headers.append("ps")
+
+    print("\t".join(headers))
+    for r in results_sorted[: max(1, int(args.top))]:
+        row = [
+            str(r["idx"]),
+            str(r["addr"]),
+            str(r["port"]),
+            str(r["code"]),
+            str(int(r["speed_Bps"])),
+            f'{r["time_s"]:.3f}',
+        ]
+        if args.show_ip:
+            row.append(r.get("exit_ip", ""))
+        row.append(r.get("ps", ""))
+        print("\t".join(row))
+
+    best = results_sorted[0] if results_sorted else None
+    if best:
+        print(
+            f"\nBEST: idx={best['idx']} addr={best['addr']}:{best['port']} speed={int(best['speed_Bps'])}B/s code={best['code']}",
+            file=sys.stderr,
+        )
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

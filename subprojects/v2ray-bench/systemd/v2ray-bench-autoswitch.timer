@@ -1,0 +1,11 @@
+[Unit]
+Description=Bench nodes and autoswitch daily
+
+[Timer]
+OnCalendar=*-*-* 03:25:00
+Persistent=true
+RandomizedDelaySec=900
+
+[Install]
+WantedBy=timers.target
+

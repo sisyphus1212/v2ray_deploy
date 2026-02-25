@@ -7,6 +7,18 @@
 
 > 注意：请不要让两个实例同时跑“远程模式”去管理同一台代理机，否则会互相抢配置。
 
+## 子项目：v2ray-bench（本机测速/自动切换）
+
+本仓库内还包含子项目 `subprojects/v2ray-bench`，它解决的是另一件事：
+
+- `v2ray_deploy`：提供订阅服务（本地模式仅 `/local-fast-ip`），不负责切换本机 `v2ray.service` 的节点
+- `v2ray-bench`：对**本机** `v2ray.service` 做节点测速，并支持“仅当更快才切换”的自动更新（会重启 `v2ray.service`）
+
+常见混淆点：
+
+- 你把客户端订阅指向 `v2ray_deploy`，只是“拿到一串 vmess 节点”；真正切换到哪个节点，需要用 `v2ray-subscribe` 或 `v2ray-bench-apply`
+- `v2ray-bench-autoswitch` 可能会重启本机 `v2ray.service`，会短暂中断现有连接（通常几秒）
+
 #原理
 ```
 代理配置服务：proxy-mgmt.service
