@@ -1,0 +1,19 @@
+[Unit]
+Description=v2ray_deploy local subscription service (fast_ip/local-fast-ip)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/v2ray_deploy
+EnvironmentFile=/etc/proxy_mgt.env
+Environment=PROXY_MGT_BIND=127.0.0.1
+Environment=PROXY_MGT_PORT=5000
+ExecStart=/root/.env/bin/python /root/v2ray_deploy/proxy_mgt.py --local True
+Restart=always
+RestartSec=3
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

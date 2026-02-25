@@ -1,0 +1,13 @@
+[Unit]
+Description=v2ray_deploy CloudflareST fast ip update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/v2ray_deploy
+EnvironmentFile=/etc/proxy_mgt.env
+Nice=19
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+ExecStart=/usr/bin/env bash /root/v2ray_deploy/get_fast_ip.sh --speed 2 --timeout 300

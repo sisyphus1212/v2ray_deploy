@@ -1,0 +1,12 @@
+[Unit]
+Description=Timer to update Cloudflare fast IPs for v2ray_deploy
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=6h
+Persistent=true
+RandomizedDelaySec=1200
+
+[Install]
+WantedBy=timers.target
+
