@@ -278,14 +278,14 @@ def _tsv_sanitize(s: str) -> str:
     return (s or "").replace("\t", " ").replace("\r", " ").replace("\n", " ")
 
 
-def append_log_rows(log_file: str, rows: list[LogRow]):
+def append_log_rows(log_file: str, rows: list[LogRow], max_data_rows: int):
     if not rows:
         return
     os.makedirs(os.path.dirname(log_file) or ".", exist_ok=True)
     header = (
         "round_id\tstarted_at\turl\trank\tidx\taddr\tport\thttp_code\tspeed_Bps\ttime_s\texit_ip\tps\tvmess_uri\n"
     )
-    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+    flags = os.O_RDWR | os.O_CREAT
     fd = os.open(log_file, flags, 0o640)
     try:
         if fcntl is not None:
@@ -294,36 +294,55 @@ def append_log_rows(log_file: str, rows: list[LogRow]):
             except Exception:
                 pass
 
+        os.lseek(fd, 0, os.SEEK_END)
         try:
             st = os.fstat(fd)
             is_empty = st.st_size == 0
         except Exception:
             is_empty = False
 
-        with os.fdopen(fd, "a", encoding="utf-8", closefd=False) as f:
-            if is_empty:
-                f.write(header)
-            for r in rows:
-                f.write(
-                    "\t".join(
-                        [
-                            _tsv_sanitize(r.round_id),
-                            _tsv_sanitize(r.started_at),
-                            _tsv_sanitize(r.url),
-                            str(int(r.rank)),
-                            str(int(r.idx)),
-                            _tsv_sanitize(r.addr),
-                            str(int(r.port)),
-                            _tsv_sanitize(r.http_code),
-                            str(int(r.speed_Bps)),
-                            f"{float(r.time_s):.6f}",
-                            _tsv_sanitize(r.exit_ip),
-                            _tsv_sanitize(r.ps),
-                            _tsv_sanitize(r.vmess_uri),
-                        ]
-                    )
-                    + "\n"
+        def _w(s: str):
+            os.write(fd, s.encode("utf-8"))
+
+        if is_empty:
+            _w(header)
+        for r in rows:
+            _w(
+                "\t".join(
+                    [
+                        _tsv_sanitize(r.round_id),
+                        _tsv_sanitize(r.started_at),
+                        _tsv_sanitize(r.url),
+                        str(int(r.rank)),
+                        str(int(r.idx)),
+                        _tsv_sanitize(r.addr),
+                        str(int(r.port)),
+                        _tsv_sanitize(r.http_code),
+                        str(int(r.speed_Bps)),
+                        f"{float(r.time_s):.6f}",
+                        _tsv_sanitize(r.exit_ip),
+                        _tsv_sanitize(r.ps),
+                        _tsv_sanitize(r.vmess_uri),
+                    ]
                 )
+                + "\n"
+            )
+
+        # Trim log to last N data rows (keep header + last N lines).
+        if max_data_rows and max_data_rows > 0:
+            os.lseek(fd, 0, os.SEEK_SET)
+            data = os.read(fd, 10 * 1024 * 1024).decode("utf-8", errors="replace")
+            lines = data.splitlines(keepends=True)
+            if not lines:
+                return
+            head = lines[0] if lines[0].startswith("round_id\t") else header
+            data_lines = [ln for ln in lines[1:] if ln.strip()]
+            if len(data_lines) > max_data_rows:
+                data_lines = data_lines[-max_data_rows:]
+                new_data = head + "".join(data_lines)
+                os.ftruncate(fd, 0)
+                os.lseek(fd, 0, os.SEEK_SET)
+                os.write(fd, new_data.encode("utf-8"))
     finally:
         try:
             os.close(fd)
@@ -359,6 +378,12 @@ def main():
         help="Append fastest results to TSV log (default: /var/log/v2ray-bench.tsv).",
     )
     ap.add_argument("--log-top", type=int, default=5, help="How many fastest rows to log per run (default: 5).")
+    ap.add_argument(
+        "--max-log-rows",
+        type=int,
+        default=200,
+        help="Max data rows to keep in TSV log (default: 200, 0 = unlimited).",
+    )
     ap.add_argument("--no-log", action="store_true", help="Do not write /var/log TSV log.")
     args = ap.parse_args()
 
@@ -540,7 +565,7 @@ def main():
                 )
             )
         try:
-            append_log_rows(args.log_file, log_rows)
+            append_log_rows(args.log_file, log_rows, max_data_rows=int(args.max_log_rows))
         except PermissionError as e:
             print(f"warn: cannot write log file {args.log_file}: {e}", file=sys.stderr)
 

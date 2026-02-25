@@ -85,6 +85,7 @@ sudo v2ray-bench-nodes --top 5 --log-top 5 --show-ip
 - `--timeout SECONDS`：每个节点测速最大耗时（默认 35）
 - `--connect-timeout SECONDS`：连接超时（默认 8）
 - `--log-file PATH`：日志输出文件（默认 `/var/log/v2ray-bench.tsv`）
+- `--max-log-rows N`：日志最多保留最近 N 条数据行（默认 200，0=不限制）
 - `--no-log`：不写日志（只输出到 stdout）
 - `--refresh`：强制从 URL 拉订阅（不走本地缓存回退）
 
