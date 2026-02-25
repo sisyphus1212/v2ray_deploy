@@ -384,8 +384,26 @@ def main():
         default=200,
         help="Max data rows to keep in TSV log (default: 200, 0 = unlimited).",
     )
+    ap.add_argument(
+        "--progress",
+        action="store_true",
+        help="Show progress to stderr (default: auto-enable when stderr is a TTY).",
+    )
+    ap.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable progress output.",
+    )
     ap.add_argument("--no-log", action="store_true", help="Do not write /var/log TSV log.")
     args = ap.parse_args()
+
+    if args.progress and args.no_progress:
+        print("error: cannot use --progress and --no-progress together", file=sys.stderr)
+        return 2
+
+    progress = False
+    if not args.no_progress:
+        progress = args.progress or sys.stderr.isatty()
 
     urls: list[str] = []
     if args.url:
@@ -442,6 +460,9 @@ def main():
         print("error: no nodes to test (all subscriptions empty/unavailable)", file=sys.stderr)
         return 2
 
+    if progress:
+        print(f"progress: round_id={round_id} started_at={started_at} total_cases={len(cases)}", file=sys.stderr)
+
     test_url = f"https://speed.cloudflare.com/__down?bytes={args.bytes}"
 
     results = []
@@ -453,6 +474,7 @@ def main():
     signal.signal(signal.SIGINT, _handle_sig)
     signal.signal(signal.SIGTERM, _handle_sig)
 
+    t0 = time.time()
     for case_idx, case in enumerate(cases):
         if stop_flag["stop"]:
             break
@@ -460,6 +482,17 @@ def main():
         url = case["url"]
         sub_idx = int(case["sub_idx"])
         node = case["node"]
+
+        if progress:
+            addr = node.get("addr", "")
+            port = node.get("port", "")
+            ps = (node.get("ps", "") or "").strip()
+            ps_short = ps[:60] + ("…" if len(ps) > 60 else "")
+            elapsed = time.time() - t0
+            print(
+                f"progress: [{case_idx+1}/{len(cases)}] elapsed={elapsed:.1f}s url={url} idx={sub_idx} addr={addr}:{port} ps={ps_short}",
+                file=sys.stderr,
+            )
 
         http_port = _pick_free_port()
         cfg = build_v2ray_config(node, http_port=http_port)
@@ -489,6 +522,8 @@ def main():
                 time.sleep(0.6)
 
             if not ready:
+                if progress:
+                    print(f"progress:   ready=fail (probe generate_204)", file=sys.stderr)
                 results.append(
                     {
                         "url": url,
@@ -511,6 +546,12 @@ def main():
                 max_time_s=args.timeout,
                 connect_timeout_s=args.connect_timeout,
             )
+
+            if progress:
+                print(
+                    f"progress:   result code={code} speed_Bps={int(speed)} time_s={total:.3f} exit_ip={exit_ip}",
+                    file=sys.stderr,
+                )
 
             results.append(
                 {
