@@ -12,8 +12,7 @@ cat << EOF > ${BACKENDSH}
 #!/usr/bin/bash
 set -a
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-http_proxy=$http_proxy
-https_proxy=$https_proxy
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
 set +a
 bash ${CMD}
 EOF

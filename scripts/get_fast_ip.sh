@@ -19,6 +19,10 @@ log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
 }
 
+run_noproxy() {
+  env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u all_proxy -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"
+}
+
 die() {
   log "ERROR: $*"
   return 1
@@ -59,6 +63,9 @@ run_my_script() {
       log "Env file not found: ${env_path} (continue)"
     fi
 
+    # Avoid system proxy env vars affecting CloudflareST/wget/curl behavior.
+    unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
+
     CloudflareST_PATH=/root/CloudflareST
     log "Prepare dir: ${CloudflareST_PATH}"
     mkdir -p "${CloudflareST_PATH}" || return 1
@@ -77,8 +84,9 @@ run_my_script() {
         ssh -o StrictHostKeyChecking=no -p "${PROXY_HOST_SSH_PORT}" \
         "${PROXY_HOST_SSH_USER}@${PROXY_HOST_ADD}" bash << EOF
 set -e
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY no_proxy NO_PROXY
 rm -f /root/${CFST_TGZ}
-wget -O /root/${CFST_TGZ} -L "${CFST_URL}"
+env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u all_proxy -u ALL_PROXY -u no_proxy -u NO_PROXY wget -O /root/${CFST_TGZ} -L "${CFST_URL}"
 ls -lh /root/${CFST_TGZ}
 EOF
       [ $? -gt 0 ] && die "Remote download failed" || log "Remote download OK"
@@ -96,7 +104,7 @@ EOF
     else
       log "GET_REMOTE disabled -> download locally"
       log "Local download start..."
-      wget -O "${CFST_TGZ}" -L "${CFST_URL}" || die "Local download failed"
+      run_noproxy wget -O "${CFST_TGZ}" -L "${CFST_URL}" || die "Local download failed"
       log "Local download OK: $(ls -lh "${CFST_TGZ}" 2>/dev/null | awk '{print $5, $9}')"
 
       log "Extract tar: ${CFST_TGZ}"
@@ -134,7 +142,7 @@ EOF
     fi
 
     # 成功判定：命令成功 + output 文件存在且非空
-    (https_proxy= http_proxy= timeout 600 "${CF_BIN}" "${args[@]}") \
+    (run_noproxy timeout 600 "${CF_BIN}" "${args[@]}") \
       || die "CloudflareST run failed"
     [ -s ./output ] || die "CloudflareST returned success but ./output missing/empty"
 
