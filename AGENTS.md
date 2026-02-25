@@ -19,3 +19,10 @@
 
 - `apply`/`autoswitch` 会写 `/usr/local/etc/v2ray/config.json` 并重启 `v2ray.service`
 - 因此任何涉及启用 `v2ray-bench-autoswitch.timer`、运行 `v2ray-bench-apply` 的操作，都必须先明确告知会短暂中断现有连接，并得到用户确认
+
+### 部署选择（必须明确）
+
+凡是提到“部署/安装/启用 systemd/定时任务”时，必须先问清楚是否需要同时部署 `v2ray-bench`：
+
+- **只部署 v2ray_deploy（订阅服务）**：不安装/不启用 `subprojects/v2ray-bench` 的任何 unit
+- **同时部署 v2ray-bench（本机测速/自动切换）**：需要明确是否启用 `v2ray-bench-autoswitch.timer`（会重启 `v2ray.service`）
