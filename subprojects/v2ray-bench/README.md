@@ -78,7 +78,7 @@ sudo v2ray-bench-nodes --top 5 --log-top 5 --show-ip
 
 常用参数：
 
-- `--url URL`：指定订阅地址（不指定则读 `subscriptions.txt` 第一行）
+- `--url URL`：只测速某一个订阅 URL（不指定则读取 `/usr/local/etc/v2ray/subscriptions.txt` 的**所有** URL 逐个测速，并在所有节点里排序取最快）
 - `--max-nodes N`：只测前 N 个节点（调试/快速）
 - `--bytes BYTES`：测速下载大小（默认 10,000,000，越小越快、越不“占带宽”）
 - `--timeout SECONDS`：每个节点测速最大耗时（默认 35）

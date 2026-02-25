@@ -339,7 +339,7 @@ def main():
     ap.add_argument(
         "--url",
         default=None,
-        help="Subscription URL. If omitted, uses first line of /usr/local/etc/v2ray/subscriptions.txt when available.",
+        help="Subscription URL. If omitted, uses all URLs from /usr/local/etc/v2ray/subscriptions.txt when available.",
     )
     ap.add_argument("--bytes", type=int, default=10_000_000, help="Download bytes for speed test (default: 10000000).")
     ap.add_argument("--timeout", type=int, default=35, help="Max seconds per node test (default: 35).")
@@ -362,46 +362,60 @@ def main():
     ap.add_argument("--no-log", action="store_true", help="Do not write /var/log TSV log.")
     args = ap.parse_args()
 
-    url = args.url
-    if not url:
+    urls: list[str] = []
+    if args.url:
+        urls = [args.url.strip()]
+    else:
         try:
             with open("/usr/local/etc/v2ray/subscriptions.txt", "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if line:
-                        url = line
-                        break
+                        urls.append(line)
         except Exception:
-            url = None
+            urls = []
 
-    if not url:
-        print("error: --url is required (and /usr/local/etc/v2ray/subscriptions.txt not readable)", file=sys.stderr)
+    if not urls:
+        print(
+            "error: no subscription URLs found (pass --url or populate /usr/local/etc/v2ray/subscriptions.txt)",
+            file=sys.stderr,
+        )
         return 2
-
-    sub_text = None
-    if not args.refresh:
-        sub_text = read_cached_subscription(url)
-    if not sub_text:
-        try:
-            sub_text = fetch_subscription(url, timeout_s=min(20, args.connect_timeout + 12))
-        except Exception as e:
-            cached = read_cached_subscription(url)
-            if cached:
-                sub_text = cached
-            else:
-                print(f"error: failed to fetch subscription: {e}", file=sys.stderr)
-                return 2
 
     started_at = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     round_id = f"{time.strftime('%Y%m%d-%H%M%S', time.localtime())}-{os.getpid()}"
 
-    nodes = parse_vmess_lines(sub_text)
-    if not nodes:
-        print("error: no vmess nodes found in subscription", file=sys.stderr)
-        return 2
+    cases: list[dict] = []
+    for url in urls:
+        sub_text = None
+        if not args.refresh:
+            sub_text = read_cached_subscription(url)
+        if not sub_text:
+            try:
+                sub_text = fetch_subscription(url, timeout_s=min(20, args.connect_timeout + 12))
+            except Exception as e:
+                cached = read_cached_subscription(url)
+                if cached:
+                    sub_text = cached
+                else:
+                    print(f"warn: failed to fetch subscription {url}: {e}", file=sys.stderr)
+                    continue
 
-    if args.max_nodes and args.max_nodes > 0:
-        nodes = nodes[: args.max_nodes]
+        nodes = parse_vmess_lines(sub_text)
+        if not nodes:
+            print(f"warn: no vmess nodes found in subscription {url}", file=sys.stderr)
+            continue
+
+        for sub_idx, node in enumerate(nodes):
+            cases.append({"url": url, "sub_idx": sub_idx, "node": node})
+            if args.max_nodes and args.max_nodes > 0 and len(cases) >= args.max_nodes:
+                break
+        if args.max_nodes and args.max_nodes > 0 and len(cases) >= args.max_nodes:
+            break
+
+    if not cases:
+        print("error: no nodes to test (all subscriptions empty/unavailable)", file=sys.stderr)
+        return 2
 
     test_url = f"https://speed.cloudflare.com/__down?bytes={args.bytes}"
 
@@ -414,9 +428,13 @@ def main():
     signal.signal(signal.SIGINT, _handle_sig)
     signal.signal(signal.SIGTERM, _handle_sig)
 
-    for idx, node in enumerate(nodes):
+    for case_idx, case in enumerate(cases):
         if stop_flag["stop"]:
             break
+
+        url = case["url"]
+        sub_idx = int(case["sub_idx"])
+        node = case["node"]
 
         http_port = _pick_free_port()
         cfg = build_v2ray_config(node, http_port=http_port)
@@ -448,7 +466,8 @@ def main():
             if not ready:
                 results.append(
                     {
-                        "idx": idx,
+                        "url": url,
+                        "idx": sub_idx,
                         "addr": node["addr"],
                         "port": node["port"],
                         "ps": node["ps"],
@@ -470,7 +489,8 @@ def main():
 
             results.append(
                 {
-                    "idx": idx,
+                    "url": url,
+                    "idx": sub_idx,
                     "addr": node["addr"],
                     "port": node["port"],
                     "ps": node["ps"],
@@ -494,16 +514,19 @@ def main():
         top_n = max(1, int(args.log_top))
         log_rows: list[LogRow] = []
         for rank, r in enumerate(results_sorted[:top_n], start=1):
+            vmess_uri = ""
             try:
-                node = nodes[int(r["idx"])]
-                vmess_uri = node.get("vmess_uri", "")
+                for c in cases:
+                    if c["url"] == r.get("url") and int(c["sub_idx"]) == int(r["idx"]):
+                        vmess_uri = str(c["node"].get("vmess_uri", ""))
+                        break
             except Exception:
                 vmess_uri = ""
             log_rows.append(
                 LogRow(
                     round_id=round_id,
                     started_at=started_at,
-                    url=url,
+                    url=str(r.get("url") or ""),
                     rank=rank,
                     idx=int(r["idx"]),
                     addr=str(r["addr"]),
@@ -521,7 +544,7 @@ def main():
         except PermissionError as e:
             print(f"warn: cannot write log file {args.log_file}: {e}", file=sys.stderr)
 
-    headers = ["idx", "addr", "port", "code", "speed_Bps", "time_s"]
+    headers = ["url", "idx", "addr", "port", "code", "speed_Bps", "time_s"]
     if args.show_ip:
         headers.append("exit_ip")
     headers.append("ps")
@@ -529,6 +552,7 @@ def main():
     print("\t".join(headers))
     for r in results_sorted[: max(1, int(args.top))]:
         row = [
+            str(r.get("url") or ""),
             str(r["idx"]),
             str(r["addr"]),
             str(r["port"]),
