@@ -1,11 +1,11 @@
 [Unit]
-Description=Run V2Ray node bench daily
+Description=Run V2Ray node bench every 4 hours
 
 [Timer]
-OnCalendar=*-*-* 03:15:00
+OnBootSec=10min
+OnUnitInactiveSec=4h
 Persistent=true
-RandomizedDelaySec=900
+RandomizedDelaySec=10min
 
 [Install]
 WantedBy=timers.target
-
