@@ -102,6 +102,17 @@ sudo v2ray-bench-nodes --top 5 --log-top 5 --show-ip
 sudo v2ray-bench-apply --rank 1
 ```
 
+安全机制（默认开启）：
+
+- **切换前预检**：会单独启动一个临时 `v2ray`（随机本地端口）去连接目标节点，并用代理请求 `https://www.google.com/generate_204` 探活；失败则不会切换
+- **切换后验活+回滚**：切换并重启 `v2ray.service` 后，会再次探活；若失败则自动回滚到切换前的 `config.json` 并重启恢复
+
+可选参数：
+
+- `--no-preflight`：跳过切换前预检（不建议）
+- `--no-rollback`：切换后探活失败不自动回滚（不建议）
+- `--probe-url/--probe-timeout/--connect-timeout`：自定义探活
+
 应用最新一轮第 2/3/4/5 名：
 
 ```bash
