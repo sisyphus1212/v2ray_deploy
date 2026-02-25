@@ -47,6 +47,7 @@ sudo ./scripts/install.sh
 - `/usr/local/bin/v2ray-bench-nodes`
 - `/usr/local/bin/v2ray-bench-apply`
 - `/usr/local/bin/v2ray-bench-autoswitch`
+- `/usr/local/bin/v2ray-bench-show`
 
 可选：连同 systemd 定时任务一起“一键安装并启用”（二选一）：
 
