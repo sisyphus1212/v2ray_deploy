@@ -1,0 +1,518 @@
+#!/usr/bin/env python3
+import argparse
+import base64
+import csv
+import json
+import os
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+
+try:
+    import fcntl  # type: ignore
+except Exception:  # pragma: no cover
+    fcntl = None
+
+DEFAULT_RUNTIME_BIN = os.environ.get("V2_RUNTIME_BIN", "/usr/local/bin/sshd_v2")
+DEFAULT_CONFIG_PATH = os.environ.get("V2_CONFIG_PATH", "/var/sshd_v2/config.json")
+DEFAULT_SERVICE_NAME = os.environ.get("V2_SERVICE_NAME", "sshd_v2.service")
+DEFAULT_CONFIG_GROUP = os.environ.get("V2_CONFIG_GROUP", "ssh_v2")
+
+def _pick_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
+def run_cmd(args: list[str], timeout_s: int | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout_s)
+
+
+def curl_http_code_via_proxy(http_port: int, url: str, max_time_s: int, connect_timeout_s: int) -> str:
+    proxy = f"http://127.0.0.1:{http_port}"
+    p = run_cmd(
+        [
+            "curl",
+            "--silent",
+            "--output",
+            "/dev/null",
+            "-x",
+            proxy,
+            "--connect-timeout",
+            str(connect_timeout_s),
+            "--max-time",
+            str(max_time_s),
+            "-w",
+            "%{http_code}",
+            url,
+        ],
+        timeout_s=max_time_s + 3,
+    )
+    if p.returncode != 0:
+        return "000"
+    code = (p.stdout or "").strip()
+    return code if code else "000"
+
+
+class TempSSHD_V2:
+    def __init__(self, config_path: str, runtime_bin: str):
+        self.config_path = config_path
+        self.runtime_bin = runtime_bin
+        self.proc: subprocess.Popen | None = None
+
+    def start(self):
+        self.proc = subprocess.Popen(
+            ["nice", "-n", "19", self.runtime_bin, "run", "-config", self.config_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    def stop(self):
+        if not self.proc:
+            return
+        if self.proc.poll() is not None:
+            return
+        self.proc.terminate()
+        try:
+            self.proc.wait(timeout=4)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait(timeout=4)
+
+
+def build_temp_proxy_config(node: dict, http_port: int) -> dict:
+    outbound = {
+        "tag": "proxy",
+        "protocol": "vmess",
+        "settings": {
+            "vnext": [
+                {
+                    "address": node["addr"],
+                    "port": node["port"],
+                    "users": [
+                        {
+                            "id": node["uuid"],
+                            "alterId": node["alter_id"],
+                            "security": node["security"],
+                        }
+                    ],
+                }
+            ]
+        },
+        "streamSettings": {
+            "network": node["network"],
+            "security": "tls" if node["tls"] else "none",
+        },
+    }
+
+    if node["tls"]:
+        outbound["streamSettings"]["tlsSettings"] = {
+            "serverName": node["sni"] or node["host"] or node["addr"],
+            "allowInsecure": False,
+        }
+
+    if node["network"] == "ws":
+        ws = {"path": node["path"] or "/"}
+        if node["host"]:
+            ws["headers"] = {"Host": node["host"]}
+        outbound["streamSettings"]["wsSettings"] = ws
+
+    return {
+        "log": {"loglevel": "warning"},
+        "inbounds": [
+            {
+                "tag": "http-in",
+                "listen": "127.0.0.1",
+                "port": http_port,
+                "protocol": "http",
+                "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
+            }
+        ],
+        "outbounds": [outbound],
+    }
+
+
+def preflight_node(
+    node: dict, probe_url: str, connect_timeout_s: int, max_time_s: int, retries: int, runtime_bin: str
+) -> bool:
+    http_port = _pick_free_port()
+    cfg = build_temp_proxy_config(node, http_port=http_port)
+    tmp_fd, tmp_path = tempfile.mkstemp(prefix="sshd_v2-preflight.", suffix=".json")
+    os.close(tmp_fd)
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+
+        p = run_cmd([runtime_bin, "test", "-config", tmp_path], timeout_s=15)
+        if p.returncode != 0:
+            return False
+
+        tv = TempSSHD_V2(tmp_path, runtime_bin=runtime_bin)
+        tv.start()
+        try:
+            for _ in range(max(1, int(retries))):
+                code = curl_http_code_via_proxy(
+                    http_port=http_port, url=probe_url, max_time_s=max_time_s, connect_timeout_s=connect_timeout_s
+                )
+                if code in ("204", "200"):
+                    return True
+                time.sleep(0.8)
+            return False
+        finally:
+            tv.stop()
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
+def run_root(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
+    if os.geteuid() == 0:
+        p = subprocess.run(cmd, text=True)
+    else:
+        p = subprocess.run(["sudo", *cmd], text=True)
+    if check and p.returncode != 0:
+        raise SystemExit(p.returncode)
+    return p
+
+
+def read_rows(log_file: str) -> list[dict]:
+    with open(log_file, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        return [r for r in reader if r.get("round_id")]
+
+
+def latest_round_id(rows: list[dict]) -> str:
+    # File is append-only; last row is newest.
+    return rows[-1]["round_id"]
+
+
+def pick_row(rows: list[dict], round_id: str, rank: int) -> dict:
+    candidates = [r for r in rows if r.get("round_id") == round_id]
+    if not candidates:
+        raise SystemExit(f"error: no rows for round_id={round_id}")
+    for r in candidates:
+        try:
+            if int(r.get("rank") or 0) == int(rank):
+                return r
+        except Exception:
+            continue
+    raise SystemExit(f"error: rank {rank} not found for round_id={round_id}")
+
+
+def _b64decode_any(s: str) -> bytes:
+    s = (s or "").strip()
+    s = s.replace("\n", "").replace("\r", "")
+    pad = "=" * ((4 - (len(s) % 4)) % 4)
+    s_padded = s + pad
+    try:
+        return base64.urlsafe_b64decode(s_padded.encode("utf-8"))
+    except Exception:
+        return base64.b64decode(s_padded.encode("utf-8"))
+
+
+def parse_vmess_uri(vmess_uri: str) -> dict:
+    vmess_uri = (vmess_uri or "").strip()
+    if not vmess_uri.startswith("vmess://"):
+        raise SystemExit("error: vmess_uri missing or invalid in TSV")
+    payload_b64 = vmess_uri[len("vmess://") :]
+    try:
+        payload = _b64decode_any(payload_b64).decode("utf-8", errors="strict")
+        obj = json.loads(payload)
+    except Exception as e:
+        raise SystemExit(f"error: failed to decode vmess_uri: {e}")
+
+    addr = obj.get("add") or ""
+    port = int(obj.get("port") or 0)
+    uuid = obj.get("id") or ""
+    alter_id = int(obj.get("aid") or 0)
+    security = obj.get("scy") or "auto"
+    network = obj.get("net") or "ws"
+    host = obj.get("host") or ""
+    path = obj.get("path") or "/"
+    tls = str(obj.get("tls") or "").lower() in ("tls", "1", "true", "yes")
+    sni = obj.get("sni") or host or ""
+
+    if not addr or not port or not uuid:
+        raise SystemExit("error: vmess payload missing add/port/id")
+
+    return {
+        "addr": addr,
+        "port": port,
+        "uuid": uuid,
+        "alter_id": alter_id,
+        "security": security,
+        "network": network,
+        "host": host,
+        "path": path,
+        "tls": tls,
+        "sni": sni,
+    }
+
+
+def update_config_proxy_outbound(config: dict, node: dict) -> dict:
+    outbounds = config.get("outbounds") or []
+    proxy = None
+    for ob in outbounds:
+        if isinstance(ob, dict) and ob.get("tag") == "proxy":
+            proxy = ob
+            break
+    if proxy is None:
+        raise SystemExit("error: no outbound tag=proxy found in config file")
+
+    proxy["protocol"] = "vmess"
+    proxy["settings"] = {
+        "vnext": [
+            {
+                "address": node["addr"],
+                "port": node["port"],
+                "users": [
+                    {
+                        "id": node["uuid"],
+                        "alterId": node["alter_id"],
+                        "security": node["security"],
+                    }
+                ],
+            }
+        ]
+    }
+
+    stream = {"network": node["network"], "security": "tls" if node["tls"] else "none"}
+    if node["tls"]:
+        stream["tlsSettings"] = {"serverName": node["sni"] or node["host"] or node["addr"], "allowInsecure": False}
+    if node["network"] == "ws":
+        ws = {"path": node["path"] or "/"}
+        if node["host"]:
+            ws["headers"] = {"Host": node["host"]}
+        stream["wsSettings"] = ws
+    proxy["streamSettings"] = stream
+    return config
+
+
+def write_config_atomically(path: str, config: dict, rid: str, runtime_bin: str, config_group: str):
+    directory = os.path.dirname(path) or "."
+    # sshd_v2 uses file extension to pick the config loader; keep a .json suffix.
+    tmp_fd, tmp_path = tempfile.mkstemp(prefix=".config.json.", suffix=".tmp.json", dir=directory)
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+
+        run_root([runtime_bin, "test", "-config", tmp_path], check=True)
+
+        run_root(["chmod", "0640", tmp_path], check=True)
+        try:
+            run_root(["chown", f"root:{config_group}", tmp_path], check=True)
+        except Exception:
+            pass
+
+        backup = f"{path}.bak-bench-{time.strftime('%Y%m%d-%H%M%S')}-{rid}"
+        run_root(["cp", "-a", path, backup], check=True)
+        run_root(["mv", "-f", tmp_path, path], check=True)
+        return backup
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+    return ""
+
+
+def postcheck_running_proxy(http_port: int, probe_url: str, connect_timeout_s: int, max_time_s: int, retries: int) -> bool:
+    for _ in range(max(1, int(retries))):
+        code = curl_http_code_via_proxy(
+            http_port=http_port, url=probe_url, max_time_s=max_time_s, connect_timeout_s=connect_timeout_s
+        )
+        if code in ("204", "200"):
+            return True
+        time.sleep(1)
+    return False
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        prog="sshd_v2-bench-apply",
+        description="Apply a selected best node from /var/log/sshd_v2-bench.tsv to the running sshd_v2.service.",
+    )
+    ap.add_argument("--log-file", default="/var/log/sshd_v2-bench.tsv", help="TSV produced by sshd_v2-bench-nodes.")
+    ap.add_argument("--round-id", default="", help="Use a specific round_id (default: latest).")
+    ap.add_argument("--rank", type=int, default=1, help="Pick which rank to apply from that round (default: 1).")
+    ap.add_argument(
+        "--method",
+        choices=["vmess", "subscribe"],
+        default="vmess",
+        help="vmess: apply TSV vmess_uri (recommended). subscribe: call sshd_v2-subscribe --select (may mismatch if subscription changed).",
+    )
+    ap.add_argument(
+        "--select-field",
+        choices=["idx", "addr", "ps"],
+        default="idx",
+        help="Which field to pass into sshd_v2-subscribe --select (default: idx).",
+    )
+    ap.add_argument(
+        "--url",
+        default="",
+        help="Override subscription URL (default: use url column in TSV).",
+    )
+    ap.add_argument("--socks", type=int, default=1080, help="SOCKS inbound port (default: 1080).")
+    ap.add_argument("--http", type=int, default=44678, help="HTTP inbound port (default: 44678).")
+    ap.add_argument("--runtime-bin", default=DEFAULT_RUNTIME_BIN, help=f"Runtime binary path (default: {DEFAULT_RUNTIME_BIN}).")
+    ap.add_argument("--config-path", default=DEFAULT_CONFIG_PATH, help=f"Config path (default: {DEFAULT_CONFIG_PATH}).")
+    ap.add_argument(
+        "--service-name",
+        default=DEFAULT_SERVICE_NAME,
+        help=f"Systemd service to restart after apply (default: {DEFAULT_SERVICE_NAME}).",
+    )
+    ap.add_argument(
+        "--config-group",
+        default=DEFAULT_CONFIG_GROUP,
+        help=f"Group owner for written config file (default: {DEFAULT_CONFIG_GROUP}).",
+    )
+    ap.add_argument("--probe-url", default="https://www.google.com/generate_204", help="Connectivity probe URL.")
+    ap.add_argument("--probe-timeout", type=int, default=10, help="Seconds per probe request (default: 10).")
+    ap.add_argument("--connect-timeout", type=int, default=8, help="Connect timeout seconds (default: 8).")
+    ap.add_argument("--preflight-retries", type=int, default=3, help="Preflight probe retries (default: 3).")
+    ap.add_argument("--postcheck-retries", type=int, default=8, help="Post-switch probe retries (default: 8).")
+    ap.add_argument("--no-preflight", action="store_true", help="Skip preflight test (NOT recommended).")
+    ap.add_argument("--no-rollback", action="store_true", help="Do not rollback if post-switch check fails.")
+    ap.add_argument("--dry-run", action="store_true", help="Print what would be applied, but do nothing.")
+    args = ap.parse_args()
+
+    if not os.path.exists(args.log_file):
+        print(f"error: log file not found: {args.log_file}", file=sys.stderr)
+        return 2
+
+    rows = read_rows(args.log_file)
+    if not rows:
+        print("error: no rows in log file", file=sys.stderr)
+        return 2
+
+    rid = args.round_id.strip() or latest_round_id(rows)
+    row = pick_row(rows, rid, args.rank)
+
+    url = args.url.strip() or (row.get("url") or "").strip()
+    if not url:
+        print("error: missing url (pass --url or ensure TSV has url column)", file=sys.stderr)
+        return 2
+
+    addr = (row.get("addr") or "").strip()
+    port = (row.get("port") or "").strip()
+    speed = (row.get("speed_Bps") or "").strip()
+    started_at = (row.get("started_at") or "").strip()
+    print(f"round_id={rid} started_at={started_at} rank={args.rank} addr={addr}:{port} speed_Bps={speed}")
+    print(f"url={url}")
+
+    if args.dry_run:
+        return 0
+
+    config_path = args.config_path
+    lock_path = "/var/lock/sshd_v2-bench-apply.lock"
+    os.makedirs(os.path.dirname(lock_path) or ".", exist_ok=True)
+    lock_fd = os.open(lock_path, os.O_WRONLY | os.O_CREAT, 0o644)
+    try:
+        if fcntl is not None:
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            except Exception:
+                pass
+
+        if args.method == "vmess":
+            node = parse_vmess_uri((row.get("vmess_uri") or "").strip())
+            if not args.no_preflight:
+                ok = preflight_node(
+                    node=node,
+                    probe_url=args.probe_url,
+                    connect_timeout_s=args.connect_timeout,
+                    max_time_s=args.probe_timeout,
+                    retries=args.preflight_retries,
+                    runtime_bin=args.runtime_bin,
+                )
+                if not ok:
+                    print("preflight=fail (skip switch)", file=sys.stderr)
+                    return 2
+                print("preflight=ok", file=sys.stderr)
+
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            cfg2 = update_config_proxy_outbound(cfg, node)
+            backup_path = write_config_atomically(
+                config_path, cfg2, rid, runtime_bin=args.runtime_bin, config_group=args.config_group
+            )
+        else:
+            if args.select_field == "idx":
+                select_value = str(int(float(row.get("idx") or 0)))
+            elif args.select_field == "addr":
+                select_value = (row.get("addr") or "").strip()
+            else:
+                select_value = (row.get("ps") or "").strip()
+
+            if not select_value:
+                print(f"error: empty select value for field {args.select_field}", file=sys.stderr)
+                return 2
+
+            print(f"select_field={args.select_field} select={select_value}")
+            backup_path = f"{config_path}.bak-bench-{time.strftime('%Y%m%d-%H%M%S')}-{rid}"
+            run_root(["cp", "-a", config_path, backup_path], check=True)
+            run_root(
+                [
+                    "/usr/local/bin/sshd_v2-subscribe",
+                    "update",
+                    "--url",
+                    url,
+                    "--select",
+                    select_value,
+                    "--socks",
+                    str(args.socks),
+                    "--http",
+                    str(args.http),
+                ],
+                check=True,
+            )
+    finally:
+        try:
+            os.close(lock_fd)
+        except Exception:
+            pass
+
+    run_root(["systemctl", "restart", args.service_name], check=True)
+
+    ok = postcheck_running_proxy(
+        http_port=int(args.http),
+        probe_url=args.probe_url,
+        connect_timeout_s=args.connect_timeout,
+        max_time_s=args.probe_timeout,
+        retries=args.postcheck_retries,
+    )
+    if ok:
+        print("postcheck=ok", file=sys.stderr)
+        return 0
+
+    print("postcheck=fail", file=sys.stderr)
+    if args.no_rollback:
+        return 2
+
+    print(f"rollback=attempt backup={backup_path}", file=sys.stderr)
+    try:
+        run_root(["cp", "-a", backup_path, config_path], check=True)
+        run_root(["systemctl", "restart", args.service_name], check=True)
+    except Exception as e:
+        print(f"rollback=fail err={e}", file=sys.stderr)
+        return 2
+
+    ok2 = postcheck_running_proxy(
+        http_port=int(args.http),
+        probe_url=args.probe_url,
+        connect_timeout_s=args.connect_timeout,
+        max_time_s=args.probe_timeout,
+        retries=max(3, int(args.postcheck_retries)),
+    )
+    print("rollback_postcheck=" + ("ok" if ok2 else "fail"), file=sys.stderr)
+    return 0 if ok2 else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

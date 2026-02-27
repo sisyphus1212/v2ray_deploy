@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+import argparse
+import csv
+import os
+import subprocess
+import sys
+import time
+
+DEFAULT_PROXY_URL = os.environ.get("V2_HTTP_PROXY_URL", "http://127.0.0.1:44678")
+
+
+def run(cmd: list[str], timeout_s: int | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout_s)
+
+
+def require_root():
+    if os.geteuid() != 0:
+        print("error: must run as root (use sudo)", file=sys.stderr)
+        raise SystemExit(2)
+
+
+def latest_round_rows(log_file: str) -> list[dict]:
+    with open(log_file, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        rows = [r for r in reader if r.get("round_id")]
+    if not rows:
+        return []
+    rid = rows[-1]["round_id"]
+    return [r for r in rows if r.get("round_id") == rid]
+
+
+def pick_rank(rows: list[dict], rank: int) -> dict | None:
+    for r in rows:
+        try:
+            if int(r.get("rank") or 0) == int(rank):
+                return r
+        except Exception:
+            continue
+    return None
+
+
+def measure_speed_via_current_proxy(
+    bytes_n: int, timeout_s: int, connect_timeout_s: int, proxy_url: str
+) -> tuple[str, int, float]:
+    url = f"https://speed.cloudflare.com/__down?bytes={bytes_n}"
+    p = run(
+        [
+            "curl",
+            "-L",
+            "--silent",
+            "--output",
+            "/dev/null",
+            "-x",
+            proxy_url,
+            "--connect-timeout",
+            str(connect_timeout_s),
+            "--max-time",
+            str(timeout_s),
+            "-w",
+            "%{http_code} %{speed_download} %{time_total}",
+            url,
+        ],
+        timeout_s=timeout_s + 5,
+    )
+    if p.returncode != 0:
+        return ("000", 0, float(timeout_s))
+    parts = p.stdout.strip().split()
+    if len(parts) != 3:
+        return ("000", 0, float(timeout_s))
+    code = parts[0]
+    try:
+        speed = int(float(parts[1]))
+    except Exception:
+        speed = 0
+    try:
+        t = float(parts[2])
+    except Exception:
+        t = float(timeout_s)
+    return (code, speed, t)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        prog="sshd_v2-bench-autoswitch",
+        description="Run sshd_v2-bench-nodes then apply best node only if it's faster than the currently running sshd_v2 proxy.",
+    )
+    ap.add_argument("--url", default="", help="Subscription URL to bench (optional).")
+    ap.add_argument("--bytes", type=int, default=2_000_000, help="Download bytes for bench and current speed check.")
+    ap.add_argument("--timeout", type=int, default=20, help="Max seconds per speed test (bench + current).")
+    ap.add_argument("--connect-timeout", type=int, default=8, help="Connect timeout seconds.")
+    ap.add_argument("--log-file", default="/var/log/sshd_v2-bench.tsv", help="TSV log path.")
+    ap.add_argument("--bench-top", type=int, default=5, help="How many top rows to record each run.")
+    ap.add_argument("--min-delta-bps", type=int, default=0, help="Require best_speed - current_speed >= this value.")
+    ap.add_argument("--min-improvement", type=float, default=0.0, help="Require best_speed >= current_speed*(1+ratio).")
+    ap.add_argument(
+        "--proxy-url",
+        default=DEFAULT_PROXY_URL,
+        help=f"Current running proxy URL for baseline speed check (default: {DEFAULT_PROXY_URL}).",
+    )
+    ap.add_argument("--dry-run", action="store_true", help="Do not apply changes; only print decision.")
+    args = ap.parse_args()
+
+    require_root()
+
+    started = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    print(f"started_at={started}")
+
+    bench_cmd = [
+        "/usr/local/bin/sshd_v2-bench-nodes",
+        "--bytes",
+        str(args.bytes),
+        "--timeout",
+        str(args.timeout),
+        "--connect-timeout",
+        str(args.connect_timeout),
+        "--top",
+        str(args.bench_top),
+        "--log-top",
+        str(args.bench_top),
+        "--log-file",
+        args.log_file,
+        "--show-ip",
+    ]
+    if args.url:
+        bench_cmd += ["--url", args.url]
+
+    p = run(bench_cmd, timeout_s=max(60, args.bench_top * (args.timeout + 15)))
+    if p.returncode != 0:
+        print("bench_failed=1", file=sys.stderr)
+        sys.stderr.write(p.stderr)
+        sys.stdout.write(p.stdout)
+        return 2
+
+    rows = latest_round_rows(args.log_file)
+    best = pick_rank(rows, 1)
+    if not best:
+        print("error: cannot find rank=1 in latest round", file=sys.stderr)
+        return 2
+
+    best_speed = int(float(best.get("speed_Bps") or 0))
+    best_addr = (best.get("addr") or "").strip()
+    best_port = (best.get("port") or "").strip()
+    best_round = (best.get("round_id") or "").strip()
+
+    cur_code, cur_speed, cur_t = measure_speed_via_current_proxy(
+        bytes_n=args.bytes, timeout_s=args.timeout, connect_timeout_s=args.connect_timeout, proxy_url=args.proxy_url
+    )
+
+    print(f"current_http_code={cur_code} current_speed_Bps={cur_speed} current_time_s={cur_t:.3f}")
+    print(f"best_round_id={best_round} best_addr={best_addr}:{best_port} best_speed_Bps={best_speed}")
+
+    threshold_ratio = max(0.0, float(args.min_improvement))
+    threshold_delta = max(0, int(args.min_delta_bps))
+    required_by_ratio = int(cur_speed * (1.0 + threshold_ratio))
+    required = max(required_by_ratio, cur_speed + threshold_delta)
+
+    if best_speed <= cur_speed:
+        print("decision=skip reason=best_not_faster")
+        return 0
+    if best_speed < required:
+        print(f"decision=skip reason=not_enough_improvement required_Bps={required}")
+        return 0
+
+    print("decision=apply")
+    if args.dry_run:
+        return 0
+
+    p2 = run(
+        ["/usr/local/bin/sshd_v2-bench-apply", "--round-id", best_round, "--rank", "1", "--method", "vmess"],
+        timeout_s=120,
+    )
+    sys.stdout.write(p2.stdout)
+    sys.stderr.write(p2.stderr)
+    return 0 if p2.returncode == 0 else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

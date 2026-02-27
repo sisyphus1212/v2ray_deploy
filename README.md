@@ -85,6 +85,16 @@ TODO
 sudo cp -a ./proxy_mgt.env /etc/proxy_mgt.env
 ```
 
+本项目当前逻辑：`v2ray-deploy-fastip.service` 会优先尝试“远端代理机下载 + scp 回传”。  
+只要 `/etc/proxy_mgt.env` 中配置了以下字段，就会自动走远端下载（不再需要 `GET_REMOTE=1`）：
+
+- `PROXY_HOST_ADD`
+- `PROXY_HOST_SSH_PORT`
+- `PROXY_HOST_SSH_USER`
+- `PROXY_HOST_SSH_PASSWORD`
+
+若上述字段缺失，才会退回本机下载 CloudflareST。
+
 建议只监听本机回环地址（避免把订阅暴露到局域网/公网）：
 
 ```bash
@@ -120,6 +130,13 @@ sudo systemctl enable --now v2ray-deploy-local.service
 ```bash
 sudo systemctl start v2ray-deploy-fastip.service
 ```
+
+CloudflareST 参数基线（当前默认）：
+
+- `--speed 1`（对应 `-sl 1`）
+- 脚本内 `timeout 1800`（30 分钟）用于 `cfst` 测速阶段
+
+如果发现 `v2ray-deploy-fastip.service` 长时间卡住或反复失败，请优先检查这两项是否被改小（尤其是 timeout 与 speed 阈值）。
 
 ### 4) 验证
 

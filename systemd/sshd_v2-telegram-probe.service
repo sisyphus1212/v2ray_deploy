@@ -1,0 +1,18 @@
+[Unit]
+Description=Probe OpenAI API via sshd_v2 HTTP proxy
+After=network-online.target sshd_v2.service
+Wants=network-online.target
+OnFailure=sshd_v2-probe-recover.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Environment=PROXY_URL=http://127.0.0.1:44678
+Environment=TARGET_URL=https://api.openai.com/
+Environment=CONNECT_TIMEOUT=5
+Environment=MAX_TIME=10
+Environment=RETRIES=3
+Environment=RETRY_SLEEP=1
+Environment=LOG_FILE=/var/log/sshd_v2-telegram-probe.log
+ExecStart=/bin/bash /root/v2ray_deploy/scripts/sshd_v2_telegram_probe.sh

@@ -1,0 +1,12 @@
+[Unit]
+Description=Apply best node from /var/log/sshd_v2-bench.tsv to sshd_v2.service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Nice=10
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/local/bin/sshd_v2-bench-apply --rank 1 --method vmess

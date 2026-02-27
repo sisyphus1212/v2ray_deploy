@@ -1,0 +1,16 @@
+[Unit]
+Description=Bench nodes then apply best to sshd_v2.service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Nice=19
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+Environment=PYTHONUNBUFFERED=1
+
+# 自动测速；仅当新最快节点速度 > 当前运行节点速度时才切换
+ExecStart=/usr/local/bin/sshd_v2-bench-autoswitch --bytes 2000000 --timeout 20 --bench-top 5 --min-delta-bps 1 --proxy-url http://127.0.0.1:44678

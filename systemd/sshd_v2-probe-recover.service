@@ -1,0 +1,16 @@
+[Unit]
+Description=Recover sshd_v2 node after probe failure (fast bench/apply)
+After=network-online.target sshd_v2.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Environment=LOG_FILE=/var/log/sshd_v2-probe-recover.log
+Environment=SUBSCRIPTIONS_FILE=/var/sshd_v2/subscriptions.txt
+Environment=BENCH_BYTES=500000
+Environment=BENCH_TIMEOUT=12
+Environment=BENCH_CONNECT_TIMEOUT=4
+Environment=BENCH_MAX_NODES=5
+ExecStart=/bin/bash /root/v2ray_deploy/scripts/sshd_v2_probe_recover.sh

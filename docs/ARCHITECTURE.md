@@ -116,8 +116,8 @@ flowchart TD
 - `/root/CloudflareST/results.csv`
 - 由 `get_fast_ip.sh` 产出，`/local-fast-ip` 接口直接读取此文件
 - 下载路径说明：
-  - 默认：本机直接下载 CloudflareSpeedTest 并执行测速
-  - `GET_REMOTE=1`：先在远端代理机下载，再通过 `scp` 拉回本机后执行
+  - 默认（若远端目标已配置）：先在远端代理机下载，再通过 `scp` 拉回本机后执行
+  - 若远端目标未配置：本机直接下载 CloudflareSpeedTest 并执行测速
   - 远端下载机来源：读取 `/etc/proxy_mgt.env` 中的 `PROXY_HOST_*` 字段（`PROXY_HOST_ADD`、`PROXY_HOST_SSH_PORT`、`PROXY_HOST_SSH_USER`、`PROXY_HOST_SSH_PASSWORD`）
 
 ---
@@ -130,11 +130,16 @@ flowchart TD
 4. 客户端访问 `http://<host>:5000/local-fast-ip`
 5. Flask 读取 `results.csv` + 环境变量，拼接 vmess 列表返回
 
+部署检查（fastip）：
+
+1. `/etc/proxy_mgt.env` 中应包含完整的 `PROXY_HOST_*` 字段
+2. `v2ray-deploy-fastip.service` 启动日志中应出现 `Remote target detected -> download on remote host then scp back`
+
 ### 6.1 get_fast_ip 下载分支
 
 ```mermaid
 flowchart LR
-  A[get_fast_ip.sh] --> B{GET_REMOTE=1?}
+  A[get_fast_ip.sh] --> B{PROXY_HOST_* 完整?}
   B -- No --> C[本机下载 CloudflareSpeedTest]
   B -- Yes --> D[远端代理机下载 CloudflareSpeedTest]
   D --> E[scp 回传到本机 /root/CloudflareST]
@@ -143,7 +148,7 @@ flowchart LR
   F --> G[/root/CloudflareST/results.csv]
 ```
 
-`GET_REMOTE=1` 时远端机器选择规则：
+远端机器自动选择规则：
 
 1. 脚本优先加载 `/etc/proxy_mgt.env`
 2. 读取 `PROXY_HOST_ADD/PROXY_HOST_SSH_PORT/PROXY_HOST_SSH_USER/PROXY_HOST_SSH_PASSWORD`
@@ -171,3 +176,7 @@ flowchart LR
 2. 本机访问正常但公网访问异常时，先核对公网 IP 是否对应当前机器。
 3. `v2ray-bench` 的 `autoswitch` 会触发服务重启，必须在低峰执行或先确认业务影响。
 4. 同机若有 Docker/其他服务占用 `8080`，请保持“本机探活端口”和“对外代理端口”分离。
+5. 若 CloudflareST 看起来“卡死/跑很久”，优先排查 `scripts/get_fast_ip.sh`：
+   - `timeout` 是否为 `1800`（30 分钟）
+   - `-sl`（由 `--speed` 控制）是否为 `1`
+   这两项过于激进（timeout 太小或 speed 阈值太高）会显著增加失败概率。

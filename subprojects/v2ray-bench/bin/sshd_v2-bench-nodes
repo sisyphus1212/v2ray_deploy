@@ -1,0 +1,654 @@
+#!/usr/bin/env python3
+import argparse
+import base64
+import json
+import os
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+from dataclasses import dataclass
+
+try:
+    import fcntl  # type: ignore
+except Exception:  # pragma: no cover
+    fcntl = None
+
+DEFAULT_RUNTIME_BIN = os.environ.get("V2_RUNTIME_BIN", "/usr/local/bin/sshd_v2")
+DEFAULT_SUBSCRIPTIONS_FILE = os.environ.get("V2_SUBSCRIPTIONS_FILE", "/var/sshd_v2/subscriptions.txt")
+
+def _pick_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
+def _b64decode_any(s: str) -> bytes:
+    s = s.strip()
+    s = s.replace("\n", "").replace("\r", "")
+    pad = "=" * ((4 - (len(s) % 4)) % 4)
+    s_padded = s + pad
+    try:
+        return base64.urlsafe_b64decode(s_padded.encode("utf-8"))
+    except Exception:
+        return base64.b64decode(s_padded.encode("utf-8"))
+
+
+def fetch_subscription(url: str, timeout_s: int) -> str:
+    req = urllib.request.Request(url, headers={"User-Agent": "sshd_v2-bench-nodes/1.0"})
+    last_err = None
+    for attempt in range(1, 4):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+                raw = resp.read()
+            last_err = None
+            break
+        except Exception as e:
+            last_err = e
+            time.sleep(0.6 * attempt)
+    if last_err is not None:
+        raise last_err
+    try:
+        text = raw.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        text = raw.decode("utf-8", errors="replace")
+
+    if "vmess://" in text:
+        return text
+
+    decoded = _b64decode_any(text).decode("utf-8", errors="replace")
+    return decoded
+
+
+def read_cached_subscription(url: str) -> str | None:
+    candidates = []
+    if "fast_ip" in url:
+        candidates.append("/var/sshd_v2/subscription.fast_ip.raw")
+    if "allow-ip" in url or "allow_ip" in url:
+        candidates.append("/var/sshd_v2/subscription.allow-ip.raw")
+    candidates.append("/var/sshd_v2/subscription.raw")
+
+    for p in candidates:
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                txt = f.read()
+            if "vmess://" in txt:
+                return txt
+        except Exception:
+            continue
+    return None
+
+
+def parse_vmess_lines(text: str):
+    nodes = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or not line.startswith("vmess://"):
+            continue
+        payload_b64 = line[len("vmess://") :]
+        try:
+            payload = _b64decode_any(payload_b64).decode("utf-8", errors="strict")
+            obj = json.loads(payload)
+        except Exception:
+            continue
+
+        addr = obj.get("add") or ""
+        port = int(obj.get("port") or 0)
+        uuid = obj.get("id") or ""
+        alter_id = int(obj.get("aid") or 0)
+        security = obj.get("scy") or "auto"
+        network = obj.get("net") or "ws"
+        host = obj.get("host") or ""
+        path = obj.get("path") or "/"
+        tls = str(obj.get("tls") or "").lower() in ("tls", "1", "true", "yes")
+        sni = obj.get("sni") or host or ""
+        ps = obj.get("ps") or ""
+
+        if not addr or not port or not uuid:
+            continue
+
+        nodes.append(
+            {
+                "ps": ps,
+                "addr": addr,
+                "port": port,
+                "uuid": uuid,
+                "alter_id": alter_id,
+                "security": security,
+                "network": network,
+                "host": host,
+                "path": path,
+                "tls": tls,
+                "sni": sni,
+                "vmess_uri": line,
+            }
+        )
+    return nodes
+
+
+def build_sshd_v2_config(node: dict, http_port: int):
+    outbound = {
+        "tag": "proxy",
+        "protocol": "vmess",
+        "settings": {
+            "vnext": [
+                {
+                    "address": node["addr"],
+                    "port": node["port"],
+                    "users": [
+                        {
+                            "id": node["uuid"],
+                            "alterId": node["alter_id"],
+                            "security": node["security"],
+                        }
+                    ],
+                }
+            ]
+        },
+        "streamSettings": {
+            "network": node["network"],
+            "security": "tls" if node["tls"] else "none",
+        },
+    }
+
+    if node["tls"]:
+        outbound["streamSettings"]["tlsSettings"] = {
+            "serverName": node["sni"] or node["host"] or node["addr"],
+            "allowInsecure": False,
+        }
+
+    if node["network"] == "ws":
+        ws = {"path": node["path"] or "/"}
+        if node["host"]:
+            ws["headers"] = {"Host": node["host"]}
+        outbound["streamSettings"]["wsSettings"] = ws
+
+    config = {
+        "log": {"loglevel": "warning"},
+        "inbounds": [
+            {
+                "tag": "http-in",
+                "listen": "127.0.0.1",
+                "port": http_port,
+                "protocol": "http",
+                "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
+            }
+        ],
+        "outbounds": [outbound],
+    }
+    return config
+
+
+def run_cmd(args, timeout_s: int | None = None):
+    return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout_s)
+
+
+def curl_via_proxy(http_port: int, url: str, max_time_s: int, connect_timeout_s: int):
+    proxy = f"http://127.0.0.1:{http_port}"
+    args = [
+        "curl",
+        "-L",
+        "--silent",
+        "--output",
+        "/dev/null",
+        "-x",
+        proxy,
+        "--connect-timeout",
+        str(connect_timeout_s),
+        "--max-time",
+        str(max_time_s),
+        "-w",
+        "%{http_code} %{speed_download} %{time_total}",
+        url,
+    ]
+    p = run_cmd(args, timeout_s=max_time_s + 5)
+    if p.returncode != 0:
+        return ("000", 0.0, float(max_time_s))
+    parts = p.stdout.strip().split()
+    if len(parts) != 3:
+        return ("000", 0.0, float(max_time_s))
+    return (parts[0], float(parts[1]), float(parts[2]))
+
+
+def get_exit_ip(http_port: int, max_time_s: int):
+    proxy = f"http://127.0.0.1:{http_port}"
+    p = run_cmd(
+        [
+            "curl",
+            "--silent",
+            "-x",
+            proxy,
+            "--connect-timeout",
+            "4",
+            "--max-time",
+            str(max_time_s),
+            "https://ipinfo.io/ip",
+        ],
+        timeout_s=max_time_s + 2,
+    )
+    if p.returncode != 0:
+        return ""
+    return p.stdout.strip()
+
+
+class BenchSSHD_V2:
+    def __init__(self, config_path: str, runtime_bin: str):
+        self.config_path = config_path
+        self.runtime_bin = runtime_bin
+        self.proc: subprocess.Popen | None = None
+
+    def start(self):
+        self.proc = subprocess.Popen(
+            ["nice", "-n", "19", self.runtime_bin, "run", "-config", self.config_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    def stop(self):
+        if not self.proc:
+            return
+        if self.proc.poll() is not None:
+            return
+        self.proc.terminate()
+        try:
+            self.proc.wait(timeout=4)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait(timeout=4)
+
+
+@dataclass(frozen=True)
+class LogRow:
+    round_id: str
+    started_at: str
+    url: str
+    rank: int
+    idx: int
+    addr: str
+    port: int
+    http_code: str
+    speed_Bps: int
+    time_s: float
+    exit_ip: str
+    ps: str
+    vmess_uri: str
+
+
+def _tsv_sanitize(s: str) -> str:
+    return (s or "").replace("\t", " ").replace("\r", " ").replace("\n", " ")
+
+
+def append_log_rows(log_file: str, rows: list[LogRow], max_data_rows: int):
+    if not rows:
+        return
+    os.makedirs(os.path.dirname(log_file) or ".", exist_ok=True)
+    header = (
+        "round_id\tstarted_at\turl\trank\tidx\taddr\tport\thttp_code\tspeed_Bps\ttime_s\texit_ip\tps\tvmess_uri\n"
+    )
+    flags = os.O_RDWR | os.O_CREAT
+    fd = os.open(log_file, flags, 0o640)
+    try:
+        if fcntl is not None:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            except Exception:
+                pass
+
+        os.lseek(fd, 0, os.SEEK_END)
+        try:
+            st = os.fstat(fd)
+            is_empty = st.st_size == 0
+        except Exception:
+            is_empty = False
+
+        def _w(s: str):
+            os.write(fd, s.encode("utf-8"))
+
+        if is_empty:
+            _w(header)
+        for r in rows:
+            _w(
+                "\t".join(
+                    [
+                        _tsv_sanitize(r.round_id),
+                        _tsv_sanitize(r.started_at),
+                        _tsv_sanitize(r.url),
+                        str(int(r.rank)),
+                        str(int(r.idx)),
+                        _tsv_sanitize(r.addr),
+                        str(int(r.port)),
+                        _tsv_sanitize(r.http_code),
+                        str(int(r.speed_Bps)),
+                        f"{float(r.time_s):.6f}",
+                        _tsv_sanitize(r.exit_ip),
+                        _tsv_sanitize(r.ps),
+                        _tsv_sanitize(r.vmess_uri),
+                    ]
+                )
+                + "\n"
+            )
+
+        # Trim log to last N data rows (keep header + last N lines).
+        if max_data_rows and max_data_rows > 0:
+            os.lseek(fd, 0, os.SEEK_SET)
+            data = os.read(fd, 10 * 1024 * 1024).decode("utf-8", errors="replace")
+            lines = data.splitlines(keepends=True)
+            if not lines:
+                return
+            head = lines[0] if lines[0].startswith("round_id\t") else header
+            data_lines = [ln for ln in lines[1:] if ln.strip()]
+            if len(data_lines) > max_data_rows:
+                data_lines = data_lines[-max_data_rows:]
+                new_data = head + "".join(data_lines)
+                os.ftruncate(fd, 0)
+                os.lseek(fd, 0, os.SEEK_SET)
+                os.write(fd, new_data.encode("utf-8"))
+    finally:
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        prog="sshd_v2-bench-nodes",
+        description="Bench vmess subscription nodes by download speed using a separate runtime instance (won't touch sshd_v2.service directly).",
+    )
+    ap.add_argument(
+        "--url",
+        default=None,
+        help=f"Subscription URL. If omitted, uses all URLs from {DEFAULT_SUBSCRIPTIONS_FILE} when available.",
+    )
+    ap.add_argument("--runtime-bin", default=DEFAULT_RUNTIME_BIN, help=f"Runtime binary path (default: {DEFAULT_RUNTIME_BIN}).")
+    ap.add_argument(
+        "--subscriptions-file",
+        default=DEFAULT_SUBSCRIPTIONS_FILE,
+        help=f"Subscriptions file path (default: {DEFAULT_SUBSCRIPTIONS_FILE}).",
+    )
+    ap.add_argument("--bytes", type=int, default=2_000_000, help="Download bytes for speed test (default: 2000000).")
+    ap.add_argument("--timeout", type=int, default=20, help="Max seconds per node test (default: 20).")
+    ap.add_argument("--connect-timeout", type=int, default=8, help="Connect timeout seconds (default: 8).")
+    ap.add_argument("--top", type=int, default=5, help="Show top N results (default: 5).")
+    ap.add_argument("--max-nodes", type=int, default=0, help="Only test first N nodes (0 = all).")
+    ap.add_argument("--sleep", type=float, default=0.8, help="Sleep seconds between nodes (default: 0.8).")
+    ap.add_argument("--show-ip", action="store_true", help="Query and display exit IP for each node.")
+    ap.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Always fetch subscription from URL (otherwise may fall back to cached /var/sshd_v2/subscription*.raw).",
+    )
+    ap.add_argument(
+        "--log-file",
+        default="/var/log/sshd_v2-bench.tsv",
+        help="Append fastest results to TSV log (default: /var/log/sshd_v2-bench.tsv).",
+    )
+    ap.add_argument("--log-top", type=int, default=5, help="How many fastest rows to log per run (default: 5).")
+    ap.add_argument(
+        "--max-log-rows",
+        type=int,
+        default=200,
+        help="Max data rows to keep in TSV log (default: 200, 0 = unlimited).",
+    )
+    ap.add_argument(
+        "--progress",
+        action="store_true",
+        help="Show progress to stderr (default: auto-enable when stderr is a TTY).",
+    )
+    ap.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable progress output.",
+    )
+    ap.add_argument("--no-log", action="store_true", help="Do not write /var/log TSV log.")
+    args = ap.parse_args()
+
+    if args.progress and args.no_progress:
+        print("error: cannot use --progress and --no-progress together", file=sys.stderr)
+        return 2
+
+    progress = False
+    if not args.no_progress:
+        progress = args.progress or sys.stderr.isatty()
+
+    urls: list[str] = []
+    if args.url:
+        urls = [args.url.strip()]
+    else:
+        try:
+            with open(args.subscriptions_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        urls.append(line)
+        except Exception:
+            urls = []
+
+    if not urls:
+        print(
+            f"error: no subscription URLs found (pass --url or populate {args.subscriptions_file})",
+            file=sys.stderr,
+        )
+        return 2
+
+    started_at = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    round_id = f"{time.strftime('%Y%m%d-%H%M%S', time.localtime())}-{os.getpid()}"
+
+    cases: list[dict] = []
+    for url in urls:
+        sub_text = None
+        if not args.refresh:
+            sub_text = read_cached_subscription(url)
+        if not sub_text:
+            try:
+                sub_text = fetch_subscription(url, timeout_s=min(20, args.connect_timeout + 12))
+            except Exception as e:
+                cached = read_cached_subscription(url)
+                if cached:
+                    sub_text = cached
+                else:
+                    print(f"warn: failed to fetch subscription {url}: {e}", file=sys.stderr)
+                    continue
+
+        nodes = parse_vmess_lines(sub_text)
+        if not nodes:
+            print(f"warn: no vmess nodes found in subscription {url}", file=sys.stderr)
+            continue
+
+        for sub_idx, node in enumerate(nodes):
+            cases.append({"url": url, "sub_idx": sub_idx, "node": node})
+            if args.max_nodes and args.max_nodes > 0 and len(cases) >= args.max_nodes:
+                break
+        if args.max_nodes and args.max_nodes > 0 and len(cases) >= args.max_nodes:
+            break
+
+    if not cases:
+        print("error: no nodes to test (all subscriptions empty/unavailable)", file=sys.stderr)
+        return 2
+
+    if progress:
+        print(f"progress: round_id={round_id} started_at={started_at} total_cases={len(cases)}", file=sys.stderr)
+
+    test_url = f"https://speed.cloudflare.com/__down?bytes={args.bytes}"
+
+    results = []
+    stop_flag = {"stop": False}
+
+    def _handle_sig(_signum, _frame):
+        stop_flag["stop"] = True
+
+    signal.signal(signal.SIGINT, _handle_sig)
+    signal.signal(signal.SIGTERM, _handle_sig)
+
+    t0 = time.time()
+    for case_idx, case in enumerate(cases):
+        if stop_flag["stop"]:
+            break
+
+        url = case["url"]
+        sub_idx = int(case["sub_idx"])
+        node = case["node"]
+
+        if progress:
+            addr = node.get("addr", "")
+            port = node.get("port", "")
+            ps = (node.get("ps", "") or "").strip()
+            ps_short = ps[:60] + ("…" if len(ps) > 60 else "")
+            elapsed = time.time() - t0
+            print(
+                f"progress: [{case_idx+1}/{len(cases)}] elapsed={elapsed:.1f}s url={url} idx={sub_idx} addr={addr}:{port} ps={ps_short}",
+                file=sys.stderr,
+            )
+
+        http_port = _pick_free_port()
+        cfg = build_sshd_v2_config(node, http_port=http_port)
+
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json") as tf:
+            json.dump(cfg, tf, indent=2)
+            tf.flush()
+            cfg_path = tf.name
+
+        bench = BenchSSHD_V2(cfg_path, runtime_bin=args.runtime_bin)
+        try:
+            bench.start()
+
+            ready = False
+            for _ in range(15):
+                if stop_flag["stop"]:
+                    break
+                code, speed, total = curl_via_proxy(
+                    http_port=http_port,
+                    url="https://www.google.com/generate_204",
+                    max_time_s=8,
+                    connect_timeout_s=args.connect_timeout,
+                )
+                if code in ("204", "200"):
+                    ready = True
+                    break
+                time.sleep(0.6)
+
+            if not ready:
+                if progress:
+                    print(f"progress:   ready=fail (probe generate_204)", file=sys.stderr)
+                results.append(
+                    {
+                        "url": url,
+                        "idx": sub_idx,
+                        "addr": node["addr"],
+                        "port": node["port"],
+                        "ps": node["ps"],
+                        "code": "000",
+                        "speed_Bps": 0.0,
+                        "time_s": float(args.timeout),
+                        "exit_ip": "",
+                    }
+                )
+                continue
+
+            exit_ip = get_exit_ip(http_port=http_port, max_time_s=10) if args.show_ip else ""
+            code, speed, total = curl_via_proxy(
+                http_port=http_port,
+                url=test_url,
+                max_time_s=args.timeout,
+                connect_timeout_s=args.connect_timeout,
+            )
+
+            if progress:
+                print(
+                    f"progress:   result code={code} speed_Bps={int(speed)} time_s={total:.3f} exit_ip={exit_ip}",
+                    file=sys.stderr,
+                )
+
+            results.append(
+                {
+                    "url": url,
+                    "idx": sub_idx,
+                    "addr": node["addr"],
+                    "port": node["port"],
+                    "ps": node["ps"],
+                    "code": code,
+                    "speed_Bps": speed,
+                    "time_s": total,
+                    "exit_ip": exit_ip,
+                }
+            )
+        finally:
+            bench.stop()
+            try:
+                os.unlink(cfg_path)
+            except Exception:
+                pass
+            time.sleep(max(0.0, float(args.sleep)))
+
+    results_sorted = sorted(results, key=lambda r: float(r.get("speed_Bps") or 0.0), reverse=True)
+
+    if not args.no_log and args.log_file:
+        top_n = max(1, int(args.log_top))
+        log_rows: list[LogRow] = []
+        for rank, r in enumerate(results_sorted[:top_n], start=1):
+            vmess_uri = ""
+            try:
+                for c in cases:
+                    if c["url"] == r.get("url") and int(c["sub_idx"]) == int(r["idx"]):
+                        vmess_uri = str(c["node"].get("vmess_uri", ""))
+                        break
+            except Exception:
+                vmess_uri = ""
+            log_rows.append(
+                LogRow(
+                    round_id=round_id,
+                    started_at=started_at,
+                    url=str(r.get("url") or ""),
+                    rank=rank,
+                    idx=int(r["idx"]),
+                    addr=str(r["addr"]),
+                    port=int(r["port"]),
+                    http_code=str(r["code"]),
+                    speed_Bps=int(float(r["speed_Bps"])),
+                    time_s=float(r["time_s"]),
+                    exit_ip=str(r.get("exit_ip") or ""),
+                    ps=str(r.get("ps") or ""),
+                    vmess_uri=str(vmess_uri),
+                )
+            )
+        try:
+            append_log_rows(args.log_file, log_rows, max_data_rows=int(args.max_log_rows))
+        except PermissionError as e:
+            print(f"warn: cannot write log file {args.log_file}: {e}", file=sys.stderr)
+
+    headers = ["url", "idx", "addr", "port", "code", "speed_Bps", "time_s"]
+    if args.show_ip:
+        headers.append("exit_ip")
+    headers.append("ps")
+
+    print("\t".join(headers))
+    for r in results_sorted[: max(1, int(args.top))]:
+        row = [
+            str(r.get("url") or ""),
+            str(r["idx"]),
+            str(r["addr"]),
+            str(r["port"]),
+            str(r["code"]),
+            str(int(r["speed_Bps"])),
+            f'{r["time_s"]:.3f}',
+        ]
+        if args.show_ip:
+            row.append(r.get("exit_ip", ""))
+        row.append(r.get("ps", ""))
+        print("\t".join(row))
+
+    best = results_sorted[0] if results_sorted else None
+    if best:
+        print(
+            f"\nBEST: idx={best['idx']} addr={best['addr']}:{best['port']} speed={int(best['speed_Bps'])}B/s code={best['code']}",
+            file=sys.stderr,
+        )
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

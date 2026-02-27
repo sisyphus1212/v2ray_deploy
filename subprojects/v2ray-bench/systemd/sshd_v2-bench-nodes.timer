@@ -1,0 +1,11 @@
+[Unit]
+Description=Run SSHD_V2 node bench every 4 hours
+
+[Timer]
+OnBootSec=10min
+OnUnitInactiveSec=4h
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=Node bench (no direct impact to sshd_v2.service config)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Nice=19
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/local/bin/sshd_v2-bench-nodes --bytes 2000000 --timeout 20 --log-top 5 --top 5 --show-ip

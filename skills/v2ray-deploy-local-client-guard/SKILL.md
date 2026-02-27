@@ -30,31 +30,34 @@ When deploying on a target host, ensure all of the following are true:
 ## Execution Checklist (Host-Scoped)
 
 1. Confirm target host exists and is reachable via Ansible.
-2. Precheck `v2ray` installation:
+2. Before deploying bench/timers, ask target host bandwidth (especially uplink/downlink cap) and confirm speed-test profile.
+   - Default profile: `--bytes 2000000 --timeout 20`
+   - If bandwidth is very low or shared with production traffic, reduce `--bytes` further or limit `--max-nodes`.
+3. Precheck `v2ray` installation:
    - verify `/usr/local/bin/v2ray` exists and `systemctl status v2ray` is available.
    - if missing, stop here and explicitly ask user to install `v2ray` first.
-3. Sync latest project code to target host.
-4. Ensure `/etc/proxy_mgt.env` contains:
+4. Sync latest project code to target host.
+5. Ensure `/etc/proxy_mgt.env` contains:
    - `PROXY_MGT_BIND=0.0.0.0` (or user-specified)
    - `PROXY_MGT_PORT=5000` (or user-specified)
-5. Restart and verify `v2ray-deploy-local.service`.
-6. Verify `/local-fast-ip` from localhost and public IP.
-7. Verify `v2ray` inbound listeners:
+6. Restart and verify `v2ray-deploy-local.service`.
+7. Verify `/local-fast-ip` from localhost and public IP.
+8. Verify `v2ray` inbound listeners:
    - local http proxy: `127.0.0.1:8080`
    - public http proxy: `0.0.0.0:18080` (or user-specified)
-8. Run hard acceptance command:
+9. Run hard acceptance command:
    - `curl -I --max-time 15 -x http://127.0.0.1:8080 https://api.telegram.org/`
-9. Report pass/fail with exact command evidence.
-10. If proxy ports are changed, sync shell proxy env in `/root/.bashrc`:
+10. Report pass/fail with exact command evidence.
+11. If proxy ports are changed, sync shell proxy env in `/root/.bashrc`:
    - update `http_proxy/https_proxy/HTTP_PROXY/HTTPS_PROXY` to the new HTTP port
    - update `all_proxy/ALL_PROXY` to the new SOCKS port
    - if no permission to read/write `/root/.bashrc`, stop immediately and notify user
-10. Verify v2ray-bench binaries include:
+12. Verify v2ray-bench binaries include:
    - `v2ray-bench-nodes`
    - `v2ray-bench-apply`
    - `v2ray-bench-autoswitch`
    - `v2ray-bench-show`
-11. If `v2ray-bench-show` is missing but repository has `subprojects/v2ray-bench/bin/v2ray-bench-show`,
+13. If `v2ray-bench-show` is missing but repository has `subprojects/v2ray-bench/bin/v2ray-bench-show`,
     install it explicitly to `/usr/local/bin/v2ray-bench-show` with executable permission.
 
 ## Recommended Verification Commands
