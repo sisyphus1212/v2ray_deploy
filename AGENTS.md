@@ -26,3 +26,16 @@
 
 - **只部署 v2ray_deploy（订阅服务）**：不安装/不启用 `subprojects/v2ray-bench` 的任何 unit
 - **同时部署 v2ray-bench（本机测速/自动切换）**：需要明确是否启用 `v2ray-bench-autoswitch.timer`（会重启 `v2ray.service`）
+
+## Project Skills（本项目内置）
+
+### v2ray-deploy-local-client-guard
+
+- skill 文件：`skills/v2ray-deploy-local-client-guard/SKILL.md`
+- 适用场景：在目标机器部署“v2ray 客户端 + v2ray_deploy 本地模式订阅服务”时，要求统一执行硬性验收。
+- 核心硬性条件：
+  1. `v2ray_deploy` 必须以 `--local True` 运行。
+  2. 订阅服务监听按需求配置（常见为 `PROXY_MGT_BIND=0.0.0.0`）。
+  3. 对外代理端口必须监听在 `0.0.0.0`（默认 `18080`）。
+  4. 必须通过：`curl -x http://127.0.0.1:8080 https://api.telegram.org/` 连通验证。
+- 触发词建议：`使用 v2ray-deploy-local-client-guard`、`按本地客户端硬性验收流程部署`。
