@@ -60,7 +60,7 @@ flowchart TD
   - `systemd/v2ray-deploy-fastip.service`
   - `systemd/v2ray-deploy-fastip.timer`
 - 脚本：
-  - `scripts/get_fast_ip.sh`（更新 CloudflareST 结果）
+  - `scripts/get_fast_ip.sh`（更新 CloudflareST 结果，支持本机下载/远端下载回传两种路径）
   - 顶层 `get_fast_ip.sh`（wrapper）
 
 ### 4.2 本机代理模块（v2ray 客户端）
@@ -115,6 +115,10 @@ flowchart TD
 
 - `/root/CloudflareST/results.csv`
 - 由 `get_fast_ip.sh` 产出，`/local-fast-ip` 接口直接读取此文件
+- 下载路径说明：
+  - 默认：本机直接下载 CloudflareSpeedTest 并执行测速
+  - `GET_REMOTE=1`：先在远端代理机下载，再通过 `scp` 拉回本机后执行
+  - 远端下载机来源：读取 `/etc/proxy_mgt.env` 中的 `PROXY_HOST_*` 字段（`PROXY_HOST_ADD`、`PROXY_HOST_SSH_PORT`、`PROXY_HOST_SSH_USER`、`PROXY_HOST_SSH_PASSWORD`）
 
 ---
 
@@ -125,6 +129,25 @@ flowchart TD
 3. 脚本更新 `/root/CloudflareST/results.csv`
 4. 客户端访问 `http://<host>:5000/local-fast-ip`
 5. Flask 读取 `results.csv` + 环境变量，拼接 vmess 列表返回
+
+### 6.1 get_fast_ip 下载分支
+
+```mermaid
+flowchart LR
+  A[get_fast_ip.sh] --> B{GET_REMOTE=1?}
+  B -- No --> C[本机下载 CloudflareSpeedTest]
+  B -- Yes --> D[远端代理机下载 CloudflareSpeedTest]
+  D --> E[scp 回传到本机 /root/CloudflareST]
+  C --> F[本机执行测速]
+  E --> F
+  F --> G[/root/CloudflareST/results.csv]
+```
+
+`GET_REMOTE=1` 时远端机器选择规则：
+
+1. 脚本优先加载 `/etc/proxy_mgt.env`
+2. 读取 `PROXY_HOST_ADD/PROXY_HOST_SSH_PORT/PROXY_HOST_SSH_USER/PROXY_HOST_SSH_PASSWORD`
+3. 用该组参数执行远端 `wget`，再 `scp` 回本机
 
 ---
 

@@ -45,6 +45,10 @@ When deploying on a target host, ensure all of the following are true:
 8. Run hard acceptance command:
    - `curl -I --max-time 15 -x http://127.0.0.1:8080 https://api.telegram.org/`
 9. Report pass/fail with exact command evidence.
+10. If proxy ports are changed, sync shell proxy env in `/root/.bashrc`:
+   - update `http_proxy/https_proxy/HTTP_PROXY/HTTPS_PROXY` to the new HTTP port
+   - update `all_proxy/ALL_PROXY` to the new SOCKS port
+   - if no permission to read/write `/root/.bashrc`, stop immediately and notify user
 10. Verify v2ray-bench binaries include:
    - `v2ray-bench-nodes`
    - `v2ray-bench-apply`
@@ -63,6 +67,7 @@ systemctl is-active v2ray
 ss -lntp | egrep ':5000 |:8080 |:18080 '
 curl -sS --max-time 20 http://127.0.0.1:5000/local-fast-ip | head -n 3
 curl -I --max-time 15 -x http://127.0.0.1:8080 https://api.telegram.org/
+test -r /root/.bashrc -a -w /root/.bashrc || echo "NO_PERMISSION:/root/.bashrc"
 ls -l /usr/local/bin/v2ray-bench-nodes /usr/local/bin/v2ray-bench-apply /usr/local/bin/v2ray-bench-autoswitch /usr/local/bin/v2ray-bench-show
 ```
 
@@ -77,3 +82,5 @@ ls -l /usr/local/bin/v2ray-bench-nodes /usr/local/bin/v2ray-bench-apply /usr/loc
    `/usr/local/bin/v2ray-bench-show` as a required post-install check.
 5. If `v2ray` is not installed on target host, do not continue deployment validation;
    notify user first, then continue only after installation is completed.
+6. If `/root/.bashrc` update is required but permission is missing, do not bypass with
+   alternative files; stop and ask user to grant permission or handle manually.
