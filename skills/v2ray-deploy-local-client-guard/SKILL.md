@@ -30,29 +30,34 @@ When deploying on a target host, ensure all of the following are true:
 ## Execution Checklist (Host-Scoped)
 
 1. Confirm target host exists and is reachable via Ansible.
-2. Sync latest project code to target host.
-3. Ensure `/etc/proxy_mgt.env` contains:
+2. Precheck `v2ray` installation:
+   - verify `/usr/local/bin/v2ray` exists and `systemctl status v2ray` is available.
+   - if missing, stop here and explicitly ask user to install `v2ray` first.
+3. Sync latest project code to target host.
+4. Ensure `/etc/proxy_mgt.env` contains:
    - `PROXY_MGT_BIND=0.0.0.0` (or user-specified)
    - `PROXY_MGT_PORT=5000` (or user-specified)
-4. Restart and verify `v2ray-deploy-local.service`.
-5. Verify `/local-fast-ip` from localhost and public IP.
-6. Verify `v2ray` inbound listeners:
+5. Restart and verify `v2ray-deploy-local.service`.
+6. Verify `/local-fast-ip` from localhost and public IP.
+7. Verify `v2ray` inbound listeners:
    - local http proxy: `127.0.0.1:8080`
    - public http proxy: `0.0.0.0:18080` (or user-specified)
-7. Run hard acceptance command:
+8. Run hard acceptance command:
    - `curl -I --max-time 15 -x http://127.0.0.1:8080 https://api.telegram.org/`
-8. Report pass/fail with exact command evidence.
-9. Verify v2ray-bench binaries include:
+9. Report pass/fail with exact command evidence.
+10. Verify v2ray-bench binaries include:
    - `v2ray-bench-nodes`
    - `v2ray-bench-apply`
    - `v2ray-bench-autoswitch`
    - `v2ray-bench-show`
-10. If `v2ray-bench-show` is missing but repository has `subprojects/v2ray-bench/bin/v2ray-bench-show`,
+11. If `v2ray-bench-show` is missing but repository has `subprojects/v2ray-bench/bin/v2ray-bench-show`,
     install it explicitly to `/usr/local/bin/v2ray-bench-show` with executable permission.
 
 ## Recommended Verification Commands
 
 ```bash
+test -x /usr/local/bin/v2ray || echo "MISSING: /usr/local/bin/v2ray"
+systemctl status v2ray --no-pager -n 5
 systemctl is-active v2ray-deploy-local.service
 systemctl is-active v2ray
 ss -lntp | egrep ':5000 |:8080 |:18080 '
@@ -70,3 +75,5 @@ ls -l /usr/local/bin/v2ray-bench-nodes /usr/local/bin/v2ray-bench-apply /usr/loc
    a different port (e.g. `18080`).
 4. Current `scripts/install.sh` may omit `v2ray-bench-show` in some revisions; treat
    `/usr/local/bin/v2ray-bench-show` as a required post-install check.
+5. If `v2ray` is not installed on target host, do not continue deployment validation;
+   notify user first, then continue only after installation is completed.
